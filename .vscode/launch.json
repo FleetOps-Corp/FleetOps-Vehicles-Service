@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-VehiclesApplication<vehicles>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.fleetops.vehicles.VehiclesApplication",
+            "projectName": "vehicles",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "type": "java",
+            "name": "Spring Boot-VehiclesApplication<fleetops-vehicles>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.fleetops.vehicles.VehiclesApplication",
+            "projectName": "fleetops-vehicles",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}
