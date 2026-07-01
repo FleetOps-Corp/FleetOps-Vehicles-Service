@@ -30,6 +30,15 @@
         <checkstyle.version>10.18.2</checkstyle.version>
         <!-- Ruta del reporte XML de JaCoCo: mismo path que luego usara SonarCloud -->
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+
+        <!-- ==================== SONARCLOUD (preparacion, sin conectar aun) ====================
+             Solo se fija la version del plugin. NO se definen aqui sonar.projectKey,
+             sonar.organization ni sonar.host.url: esos valores viven en
+             sonar-project.properties (Fase 2) y/o se inyectan como -D desde el
+             workflow de CI (Fase 3), para evitar duplicar la fuente de verdad.
+             El analisis real solo se activara cuando exista el Secret SONAR_TOKEN.
+         -->
+        <sonar-maven-plugin.version>4.0.0.4121</sonar-maven-plugin.version>
     </properties>
 
     <dependencies>
@@ -223,6 +232,24 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+
+            <!-- ==================== SONARCLOUD (preparacion, sin conectar aun) ====================
+                 Declara el goal "sonar:sonar" para que este disponible cuando el
+                 pipeline lo invoque desde ci.yml. NO tiene ninguna <execution>
+                 automatica: nunca se dispara en un "mvn install"/"mvn verify"
+                 normal, solo cuando se lo invoca explicitamente.
+
+                 Los valores de identificacion del proyecto (projectKey, organization,
+                 host.url) NO se definen aqui todavia; se centralizan en
+                 sonar-project.properties (Fase 2) y se resolveran definitivamente
+                 el dia que se cree la organizacion/proyecto en SonarCloud (Fase 4).
+                 No requiere modificar este pom.xml nuevamente en ese momento.
+             -->
+            <plugin>
+                <groupId>org.sonarsource.scanner.maven</groupId>
+                <artifactId>sonar-maven-plugin</artifactId>
+                <version>${sonar-maven-plugin.version}</version>
             </plugin>
         </plugins>
     </build>

@@ -3,21 +3,22 @@ name: CI - FleetOps Vehicles
 # =============================================================================
 # Pipeline de Integracion Continua (CI) para el microservicio FleetOps Vehicles
 #
-# Alcance actual (Fase 3):
-#   1. Checkout
+# Alcance actual:
+#   1. Checkout (historial completo, requerido por SonarCloud)
 #   2. Validar Maven Wrapper
 #   3. Configurar JDK 21 (Temurin)
 #   4. Cache de dependencias Maven
 #   5. Compilar
 #   6. Ejecutar tests (con PostgreSQL real como service container)
 #   7. Generar reporte de cobertura JaCoCo
-#   8. Ejecutar Checkstyle
-#   9. Empaquetar el proyecto (jar ejecutable)
-#  10. Subir el jar como Artifact de GitHub Actions
+#   8. Analisis de SonarCloud (PREPARADO pero INACTIVO -- se omite
+#      automaticamente mientras no exista el Secret SONAR_TOKEN)
+#   9. Ejecutar Checkstyle
+#  10. Empaquetar el proyecto (jar ejecutable)
+#  11. Subir el jar como Artifact de GitHub Actions
 #
 # Explicitamente FUERA de alcance por ahora (ver comentarios TODO-FASE-X mas
 # abajo, marcando el lugar exacto donde se agregara cada cosa despues):
-#   - SonarCloud (falta configurar Secrets del proyecto)
 #   - Build y push de imagen Docker / Docker Registry
 #   - Despliegue a AWS EC2 / cualquier CD
 # =============================================================================
@@ -64,8 +65,13 @@ jobs:
 
     steps:
       # 1. Checkout ---------------------------------------------------------
+      # fetch-depth: 0 -> historial completo de git, requerido por SonarCloud
+      # para calcular el "new code period" (blame) con precision. Sin esto
+      # el analisis funcionaria igual, pero con menos exactitud.
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # 2. Validar Maven Wrapper ---------------------------------------------
       # El bit de ejecucion de mvnw se pierde facilmente al venir de un
@@ -114,29 +120,44 @@ jobs:
       - name: Generar reporte de cobertura JaCoCo
         run: ./mvnw -B jacoco:report
 
-      # TODO-FASE-SONARCLOUD:
-      # Aqui se agregara el analisis de SonarCloud una vez existan los
-      # Secrets del proyecto (SONAR_TOKEN, SONAR_HOST_URL), reutilizando
-      # el reporte generado en target/site/jacoco/jacoco.xml (ya
-      # referenciado en pom.xml via sonar.coverage.jacoco.xmlReportPaths).
-      # Ejemplo futuro:
-      #   - name: SonarCloud Scan
-      #     run: ./mvnw -B verify sonar:sonar -Dsonar.projectKey=... -Dsonar.organization=...
-      #     env:
-      #       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      # Analisis de SonarCloud (preparado, inactivo hasta que exista SONAR_TOKEN) ---
+      # Se ejecuta UNICAMENTE si el Secret SONAR_TOKEN esta configurado en el
+      # repositorio. Si no existe, GitHub Actions evalua la condicion como
+      # false y el step aparece como "Skipped" (NO como fallo), permitiendo
+      # que el resto del pipeline continue con normalidad para los ~30
+      # estudiantes mientras SonarCloud todavia no esta conectado.
+      #
+      # sonar.projectKey y sonar.organization se resuelven aqui mismo como
+      # variables de entorno (SONAR_PROJECT_KEY / SONAR_ORGANIZATION) para
+      # que, el dia que se cree el proyecto en SonarCloud (Fase 4), solo se
+      # necesite crear esos Secrets/Variables en GitHub -- sin volver a tocar
+      # este archivo. sonar-project.properties ya aporta el resto de la
+      # configuracion (sources, tests, rutas de reportes, encoding, etc.).
+      - name: Analisis de SonarCloud
+        if: ${{ secrets.SONAR_TOKEN != '' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          # TODO-FASE-SONARCLOUD: crear estos dos Secrets/Variables en GitHub
+          # el dia que exista la organizacion/proyecto en SonarCloud (Fase 4).
+          SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
+          SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
+        run: >-
+          ./mvnw -B sonar:sonar
+          -Dsonar.projectKey=$SONAR_PROJECT_KEY
+          -Dsonar.organization=$SONAR_ORGANIZATION
 
-      # 8. Ejecutar Checkstyle ------------------------------------------------------
+      # 9. Ejecutar Checkstyle ------------------------------------------------------
       # No falla el build todavia (failOnViolation=false en pom.xml): el
       # objetivo actual es dar visibilidad de violaciones, no bloquear al
       # equipo por deuda tecnica preexistente.
       - name: Ejecutar Checkstyle
         run: ./mvnw -B checkstyle:check
 
-      # 9. Empaquetar el proyecto -----------------------------------------------------
+      # 10. Empaquetar el proyecto -----------------------------------------------------
       - name: Empaquetar (build del jar ejecutable)
         run: ./mvnw -B package -DskipTests
 
-      # 10. Subir el JAR como Artifact ---------------------------------------------------
+      # 11. Subir el JAR como Artifact ---------------------------------------------------
       - name: Subir jar como artifact
         uses: actions/upload-artifact@v4
         with:
