@@ -42,6 +42,15 @@ jobs:
     runs-on: ubuntu-latest
 
     # ---------------------------------------------------------------------
+    # SONAR_TOKEN expuesto como env de job (no de step): el contexto
+    # "secrets" NO esta disponible dentro de condiciones "if:" de GitHub
+    # Actions (solo en env/with/etc.). Se copia aqui a env.SONAR_TOKEN para
+    # poder evaluar su existencia en el "if:" del step de SonarCloud.
+    # ---------------------------------------------------------------------
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+    # ---------------------------------------------------------------------
     # PostgreSQL como service container: replica exactamente lo que
     # application.properties ya espera (localhost:5432 / fleetops_vehicles /
     # postgres / root), sin modificar ningun archivo de configuracion de la
@@ -134,9 +143,8 @@ jobs:
       # este archivo. sonar-project.properties ya aporta el resto de la
       # configuracion (sources, tests, rutas de reportes, encoding, etc.).
       - name: Analisis de SonarCloud
-        if: ${{ secrets.SONAR_TOKEN != '' }}
+        if: ${{ env.SONAR_TOKEN != '' }}
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           # TODO-FASE-SONARCLOUD: crear estos dos Secrets/Variables en GitHub
           # el dia que exista la organizacion/proyecto en SonarCloud (Fase 4).
           SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
