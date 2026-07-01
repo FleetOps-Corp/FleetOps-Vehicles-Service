@@ -1,0 +1,35 @@
+# Build output (se regenera dentro del contenedor)
+target/
+
+# Control de versiones
+.git/
+.gitattributes
+.gitignore
+
+# IDEs / editores
+.idea/
+.vscode/
+*.iml
+*.iws
+
+# Wrapper de otros SO / binarios innecesarios en build context
+mvnw.cmd
+
+# Logs y archivos temporales
+*.log
+hs_err_pid*.log
+logs/
+*.tmp
+
+# Variables de entorno y secretos locales (NUNCA deben entrar a la imagen)
+.env
+.env.*
+!.env.example
+
+# Documentación (no requerida para el build/runtime)
+HELP.md
+README.md
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

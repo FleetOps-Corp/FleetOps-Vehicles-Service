@@ -1,0 +1,157 @@
+name: CI - FleetOps Vehicles
+
+# =============================================================================
+# Pipeline de Integracion Continua (CI) para el microservicio FleetOps Vehicles
+#
+# Alcance actual (Fase 3):
+#   1. Checkout
+#   2. Validar Maven Wrapper
+#   3. Configurar JDK 21 (Temurin)
+#   4. Cache de dependencias Maven
+#   5. Compilar
+#   6. Ejecutar tests (con PostgreSQL real como service container)
+#   7. Generar reporte de cobertura JaCoCo
+#   8. Ejecutar Checkstyle
+#   9. Empaquetar el proyecto (jar ejecutable)
+#  10. Subir el jar como Artifact de GitHub Actions
+#
+# Explicitamente FUERA de alcance por ahora (ver comentarios TODO-FASE-X mas
+# abajo, marcando el lugar exacto donde se agregara cada cosa despues):
+#   - SonarCloud (falta configurar Secrets del proyecto)
+#   - Build y push de imagen Docker / Docker Registry
+#   - Despliegue a AWS EC2 / cualquier CD
+# =============================================================================
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+  workflow_dispatch:
+
+# Cancela runs anteriores del mismo branch/PR si llega un push nuevo,
+# evitando gastar minutos de CI en builds obsoletos.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build, Test & Quality Checks
+    runs-on: ubuntu-latest
+
+    # ---------------------------------------------------------------------
+    # PostgreSQL como service container: replica exactamente lo que
+    # application.properties ya espera (localhost:5432 / fleetops_vehicles /
+    # postgres / root), sin modificar ningun archivo de configuracion de la
+    # aplicacion. GitHub Actions expone el puerto del contenedor en
+    # localhost del runner, tal como necesita el datasource hardcodeado.
+    # ---------------------------------------------------------------------
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: fleetops_vehicles
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: root
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d fleetops_vehicles"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      # 1. Checkout ---------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Validar Maven Wrapper ---------------------------------------------
+      # El bit de ejecucion de mvnw se pierde facilmente al venir de un
+      # checkout hecho en Windows; se fuerza aqui de forma explicita e
+      # idempotente para que el runner Linux pueda ejecutarlo.
+      - name: Validar Maven Wrapper
+        run: |
+          chmod +x mvnw
+          ./mvnw --version
+
+      # 3. Configurar JDK 21 (Temurin) ----------------------------------------
+      - name: Configurar JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # 4. Cache de Maven -----------------------------------------------------
+      # Complementa el cache nativo de setup-java cacheando tambien el
+      # directorio de plugins/wrapper para acelerar runs sucesivos.
+      - name: Cache de dependencias Maven
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.m2/wrapper
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      # 5. Compilar ------------------------------------------------------------
+      - name: Compilar proyecto
+        run: ./mvnw -B clean compile
+
+      # 6. Ejecutar Tests --------------------------------------------------------
+      # Los tests corren contra el Postgres real definido en "services"
+      # (mismas credenciales que application.properties ya usa).
+      - name: Ejecutar tests
+        run: ./mvnw -B test
+
+      # 7. Generar reporte JaCoCo -------------------------------------------------
+      # El goal "report" ya se ejecuta automaticamente en la fase test
+      # (ver pom.xml), este paso solo lo deja explicito en el pipeline y
+      # sirve de punto de enganche visible para SonarCloud mas adelante.
+      - name: Generar reporte de cobertura JaCoCo
+        run: ./mvnw -B jacoco:report
+
+      # TODO-FASE-SONARCLOUD:
+      # Aqui se agregara el analisis de SonarCloud una vez existan los
+      # Secrets del proyecto (SONAR_TOKEN, SONAR_HOST_URL), reutilizando
+      # el reporte generado en target/site/jacoco/jacoco.xml (ya
+      # referenciado en pom.xml via sonar.coverage.jacoco.xmlReportPaths).
+      # Ejemplo futuro:
+      #   - name: SonarCloud Scan
+      #     run: ./mvnw -B verify sonar:sonar -Dsonar.projectKey=... -Dsonar.organization=...
+      #     env:
+      #       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # 8. Ejecutar Checkstyle ------------------------------------------------------
+      # No falla el build todavia (failOnViolation=false en pom.xml): el
+      # objetivo actual es dar visibilidad de violaciones, no bloquear al
+      # equipo por deuda tecnica preexistente.
+      - name: Ejecutar Checkstyle
+        run: ./mvnw -B checkstyle:check
+
+      # 9. Empaquetar el proyecto -----------------------------------------------------
+      - name: Empaquetar (build del jar ejecutable)
+        run: ./mvnw -B package -DskipTests
+
+      # 10. Subir el JAR como Artifact ---------------------------------------------------
+      - name: Subir jar como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fleetops-vehicles-jar
+          path: target/*.jar
+          retention-days: 14
+
+      # TODO-FASE-DOCKER:
+      # Aqui se agregara el build de la imagen Docker (usando el Dockerfile
+      # ya validado) y, cuando exista un registry configurado, el push a
+      # Docker Registry (GHCR/ECR/DockerHub). Ejemplo futuro:
+      #   - name: Build Docker image
+      #     run: docker build -t fleetops-vehicles:${{ github.sha }} .
+
+      # TODO-FASE-CD-AWS:
+      # Aqui se agregara, en un job/workflow separado de Continuous
+      # Deployment, la conexion a una instancia AWS EC2 (via SSH/SSM) para
+      # desplegar la nueva imagen usando el docker-compose.yml ya validado.

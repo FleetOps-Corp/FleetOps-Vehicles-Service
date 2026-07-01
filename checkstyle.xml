@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<!--
+    Reglas de estilo de codigo - FleetOps Vehicles
+    Basado en una version relajada de Google Java Style, pensada para un
+    proyecto academico con ~30 colaboradores. El objetivo inicial es dar
+    VISIBILIDAD de violaciones (el build no falla todavia, ver pom.xml:
+    failOnViolation=false). Se puede endurecer progresivamente.
+-->
+<module name="Checker">
+
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="warning"/>
+    <property name="fileExtensions" value="java"/>
+
+    <!-- Evita lineas excesivamente largas -->
+    <module name="LineLength">
+        <property name="max" value="150"/>
+        <property name="ignorePattern" value="^package.*|^import.*|a href|href|http://|https://"/>
+    </module>
+
+    <module name="TreeWalker">
+
+        <!-- Convenciones de nombres -->
+        <module name="TypeName"/>
+        <module name="MethodName"/>
+        <module name="LocalVariableName"/>
+        <module name="MemberName"/>
+        <module name="ConstantName"/>
+        <module name="PackageName"/>
+
+        <!-- Imports -->
+        <module name="RedundantImport"/>
+        <module name="UnusedImports"/>
+        <module name="AvoidStarImport"/>
+
+        <!-- Buenas practicas basicas -->
+        <module name="EqualsHashCode"/>
+        <module name="SimplifyBooleanExpression"/>
+        <module name="SimplifyBooleanReturn"/>
+        <module name="EmptyBlock">
+            <property name="option" value="text"/>
+        </module>
+        <module name="NeedBraces"/>
+
+        <!-- Formato -->
+        <module name="WhitespaceAround"/>
+        <module name="ModifierOrder"/>
+
+    </module>
+
+</module>

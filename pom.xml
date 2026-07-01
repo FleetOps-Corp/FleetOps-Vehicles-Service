@@ -20,6 +20,16 @@
 
     <properties>
         <java.version>21</java.version>
+
+        <!-- ==================== CI / CALIDAD DE CODIGO ==================== -->
+        <!-- Versiones fijadas explicitamente para reproducibilidad del pipeline -->
+        <maven.compiler.release>21</maven.compiler.release>
+        <maven-surefire-plugin.version>3.3.1</maven-surefire-plugin.version>
+        <jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
+        <maven-checkstyle-plugin.version>3.5.0</maven-checkstyle-plugin.version>
+        <checkstyle.version>10.18.2</checkstyle.version>
+        <!-- Ruta del reporte XML de JaCoCo: mismo path que luego usara SonarCloud -->
+        <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
     </properties>
 
     <dependencies>
@@ -134,6 +144,85 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!-- ==================== SUREFIRE (Tests unitarios) ==================== -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <configuration>
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                    </includes>
+                    <testFailureIgnore>false</testFailureIgnore>
+                </configuration>
+            </plugin>
+
+            <!-- ==================== JACOCO (Cobertura de tests) ====================
+                 Genera target/site/jacoco/jacoco.xml, formato que luego consumira
+                 SonarCloud via la propiedad sonar.coverage.jacoco.xmlReportPaths.
+                 No se define aun una regla de cobertura minima (jacoco:check):
+                 la suite de tests actual es minima y forzar un umbral bloquearia
+                 el pipeline de todo el equipo. Se agregara cuando exista cobertura real.
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- ==================== CHECKSTYLE (Estilo de codigo) ====================
+                 Genera reporte de violaciones pero NO falla el build todavia
+                 (failOnViolation=false). El codigo existente nunca fue analizado
+                 con Checkstyle; activar el fallo de inmediato bloquearia a todo
+                 el equipo por deuda tecnica preexistente. Se endurecera de forma
+                 incremental una vez el equipo revise el primer reporte.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>${maven-checkstyle-plugin.version}</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.puppycrawl.tools</groupId>
+                        <artifactId>checkstyle</artifactId>
+                        <version>${checkstyle.version}</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <configLocation>checkstyle.xml</configLocation>
+                    <encoding>UTF-8</encoding>
+                    <consoleOutput>true</consoleOutput>
+                    <violationSeverity>warning</violationSeverity>
+                    <failOnViolation>false</failOnViolation>
+                    <failsOnError>false</failsOnError>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>checkstyle-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
