@@ -42,15 +42,6 @@ jobs:
     runs-on: ubuntu-latest
 
     # ---------------------------------------------------------------------
-    # SONAR_TOKEN expuesto como env de job (no de step): el contexto
-    # "secrets" NO esta disponible dentro de condiciones "if:" de GitHub
-    # Actions (solo en env/with/etc.). Se copia aqui a env.SONAR_TOKEN para
-    # poder evaluar su existencia en el "if:" del step de SonarCloud.
-    # ---------------------------------------------------------------------
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-    # ---------------------------------------------------------------------
     # PostgreSQL como service container: replica exactamente lo que
     # application.properties ya espera (localhost:5432 / fleetops_vehicles /
     # postgres / root), sin modificar ningun archivo de configuracion de la
@@ -129,12 +120,28 @@ jobs:
       - name: Generar reporte de cobertura JaCoCo
         run: ./mvnw -B jacoco:report
 
+      # Verificar si SONAR_TOKEN esta configurado (sin exponer su valor) --------
+      # El contexto "secrets" NO puede usarse directamente en condiciones "if:"
+      # de un step (solo en env/with/run). Por eso se verifica su existencia
+      # aqui, dentro de un "run:" normal, y se expone el resultado como output
+      # booleano -- "steps.*.outputs" si es un contexto valido en "if:".
+      - name: Verificar si SONAR_TOKEN esta configurado
+        id: check_sonar_token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ]; then
+            echo "token_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "token_present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # Analisis de SonarCloud (preparado, inactivo hasta que exista SONAR_TOKEN) ---
-      # Se ejecuta UNICAMENTE si el Secret SONAR_TOKEN esta configurado en el
-      # repositorio. Si no existe, GitHub Actions evalua la condicion como
-      # false y el step aparece como "Skipped" (NO como fallo), permitiendo
-      # que el resto del pipeline continue con normalidad para los ~30
-      # estudiantes mientras SonarCloud todavia no esta conectado.
+      # Se ejecuta UNICAMENTE si el step anterior confirmo que el Secret
+      # SONAR_TOKEN existe. Si no existe, este step aparece como "Skipped"
+      # (NO como fallo), permitiendo que el resto del pipeline continue con
+      # normalidad para los ~30 estudiantes mientras SonarCloud todavia no
+      # esta conectado.
       #
       # sonar.projectKey y sonar.organization se resuelven aqui mismo como
       # variables de entorno (SONAR_PROJECT_KEY / SONAR_ORGANIZATION) para
@@ -142,15 +149,19 @@ jobs:
       # necesite crear esos Secrets/Variables en GitHub -- sin volver a tocar
       # este archivo. sonar-project.properties ya aporta el resto de la
       # configuracion (sources, tests, rutas de reportes, encoding, etc.).
+      # sonar.host.url se pasa explicito para no depender del fallback por
+      # defecto del scanner (localhost:9000).
       - name: Analisis de SonarCloud
-        if: ${{ env.SONAR_TOKEN != '' }}
+        if: steps.check_sonar_token.outputs.token_present == 'true'
         env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           # TODO-FASE-SONARCLOUD: crear estos dos Secrets/Variables en GitHub
           # el dia que exista la organizacion/proyecto en SonarCloud (Fase 4).
           SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
           SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
         run: >-
           ./mvnw -B sonar:sonar
+          -Dsonar.host.url=https://sonarcloud.io
           -Dsonar.projectKey=$SONAR_PROJECT_KEY
           -Dsonar.organization=$SONAR_ORGANIZATION
 
