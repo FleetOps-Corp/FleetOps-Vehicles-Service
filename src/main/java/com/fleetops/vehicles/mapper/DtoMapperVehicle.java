@@ -43,6 +43,11 @@ public class DtoMapperVehicle {
                 vehiculo.getAnioFabricacion(),
                 // 6. Extrae el color.
                 vehiculo.getColor(),
+
+                vehiculo.getNumeroChasis(),
+
+                vehiculo.getNumeroMotor(),
+                
                 // 7. Extrae el kilometraje.
                 vehiculo.getKilometraje(),
                 // 8. Extrae la ciudad de operación.

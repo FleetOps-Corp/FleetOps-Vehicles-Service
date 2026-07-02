@@ -51,7 +51,9 @@ public interface SagaService {
     // Método para deshacer (rollback) una reserva específica usando su ID.
     // PATRÓN: Compensating Transaction (Transacción de Compensación). Es el
     // "Ctrl+Z" del sistema.
-    boolean compensarPorReservaId(UUID reservaId, String motivo);
+    ReservaResponse compensarPorReservaId(UUID reservaId, String motivo);
+
+    List<ReservaResponse> cancelarReservasPorPlaca(String placa, String motivo);
 
     // Método para deshacer toda la transacción distribuida usando el ID del
     // expediente global (Saga).
