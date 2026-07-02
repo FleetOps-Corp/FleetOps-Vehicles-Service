@@ -1,0 +1,137 @@
+name: CD - Deploy a AWS EC2 (Preparado, DESHABILITADO)
+
+# =============================================================================
+# Workflow de Continuous Deployment (CD) para FleetOps Vehicles.
+#
+# ESTADO ACTUAL: DESHABILITADO A PROPOSITO (ver "if: false" en el job "deploy").
+#
+# Motivo: todavia NO existen los siguientes elementos de infraestructura:
+#   - Instancia EC2 real
+#   - Credenciales SSH
+#   - GitHub Secrets (EC2_HOST, EC2_USER, EC2_SSH_KEY, etc.)
+#   - Container Registry definitivo (GHCR/ECR/otro)
+#
+# Este archivo deja preparado el flujo completo de despliegue para que, el
+# dia que exista la infraestructura, solo sea necesario:
+#   1. Crear los GitHub Secrets necesarios (ver mas abajo).
+#   2. Quitar/cambiar el "if: false" del job "deploy".
+#   3. Hacer un push (o disparar manualmente via workflow_dispatch).
+#
+# Flujo logico que implementa este workflow (hoy inactivo):
+#
+#   Build realizado por CI
+#         |
+#         v
+#   Imagen Docker disponible
+#         |
+#         v
+#   Conexion SSH a EC2
+#         |
+#         v
+#   Actualizar imagen
+#         |
+#         v
+#   docker compose pull
+#         |
+#         v
+#   docker compose up -d
+#         |
+#         v
+#   Verificacion del estado del servicio
+#
+# No requiere AWS CLI: el despliegue se hace directamente por SSH contra la
+# instancia EC2, usando el docker-compose.yml ya validado del repositorio.
+# =============================================================================
+
+on:
+  # Se dispara automaticamente al finalizar el workflow de CI (solo si CI
+  # termino exitosamente), y tambien se puede disparar manualmente.
+  # Mientras el job "deploy" tenga "if: false", ninguno de estos triggers
+  # provoca un despliegue real.
+  workflow_run:
+    workflows: [ "CI - FleetOps Vehicles" ]
+    types: [ completed ]
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy a EC2 (INACTIVO)
+    runs-on: ubuntu-latest
+
+    # -------------------------------------------------------------------------
+    # DESHABILITADO A PROPOSITO.
+    # No existe instancia EC2 ni Secrets configurados todavia. Cuando la
+    # infraestructura este lista, cambiar esta linea por, por ejemplo:
+    #   if: github.event.workflow_run.conclusion == 'success'
+    # (o eliminar la condicion por completo si se dispara solo via
+    # workflow_dispatch).
+    # -------------------------------------------------------------------------
+    if: false
+
+    # Solo tiene sentido ejecutar el deploy si el CI que lo disparo paso
+    # exitosamente (aplica una vez se reactive este job).
+    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      # 1. Checkout ------------------------------------------------------------
+      # Necesario para tener disponible docker-compose.yml (y el Dockerfile,
+      # si en el futuro se decide construir la imagen en este mismo workflow
+      # en vez de reutilizar un artifact/registry).
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Imagen Docker disponible ---------------------------------------------
+      # Hoy el CI (ci.yml) solo empaqueta el jar y lo sube como Artifact; NO
+      # publica todavia una imagen Docker a ningun registry (GHCR/ECR/etc. -
+      # explicitamente fuera de alcance por ahora, ver TODO-FASE-DOCKER en
+      # ci.yml). Cuando eso exista, aqui se descargaria/referenciaria esa
+      # imagen usando DOCKER_IMAGE y DOCKER_TAG.
+      #
+      # Ejemplo futuro (comentado, no activo):
+      # - name: Login a GHCR (opcional, futuro)
+      #   uses: docker/login-action@v3
+      #   with:
+      #     registry: ghcr.io
+      #     username: ${{ secrets.GHCR_USERNAME }}
+      #     password: ${{ secrets.GHCR_TOKEN }}
+      - name: Referencia de imagen Docker a desplegar (placeholder)
+        run: |
+          echo "Imagen a desplegar (placeholder, no se usa aun): ${{ secrets.DOCKER_IMAGE }}:${{ secrets.DOCKER_TAG }}"
+
+      # 3. Conexion SSH a EC2 + 4. Actualizar imagen + 5. docker compose pull +
+      # 6. docker compose up -d ------------------------------------------------
+      # Se ejecutan como un unico bloque remoto via SSH, reutilizando el
+      # docker-compose.yml ya validado del repositorio (se asume que una
+      # copia equivalente vive en la instancia EC2, en DEPLOY_PATH).
+      #
+      # Secrets requeridos quel dia del despliegue:
+      #   EC2_HOST     -> IP o DNS publico de la instancia EC2
+      #   EC2_USER     -> usuario SSH (ej. "ubuntu", "ec2-user")
+      #   EC2_SSH_KEY  -> clave privada SSH (formato PEM) con acceso a la instancia
+      #   DEPLOY_PATH  -> (opcional) ruta remota donde vive docker-compose.yml
+      - name: Desplegar en EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            docker compose pull
+            docker compose up -d
+
+      # 7. Verificacion del estado del servicio ---------------------------------
+      # Confirma que el contenedor "vehicles-service" quedo healthy tras el
+      # despliegue, reutilizando el mismo endpoint de Actuator ya validado
+      # en el Dockerfile (/actuator/health).
+      - name: Verificar estado del servicio desplegado
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            docker compose ps
+            curl -sf http://localhost:8081/actuator/health || (echo "Healthcheck fallido" && exit 1)
