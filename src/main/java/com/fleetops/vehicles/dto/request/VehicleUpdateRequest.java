@@ -78,8 +78,7 @@ public record VehicleUpdateRequest(
         @NotBlank(message = "La sede de operación es obligatoria") 
         String sedeOperacion,
 
-        // Estado del vehículo (Ej: DISPONIBLE, MANTENIMIENTO).
-        @NotBlank(message = "El estado del vehículo es obligatorio") 
+        
         String estadoVehiculo,
 
         @NotNull(message = "La fecha del SOAT es obligatoria")

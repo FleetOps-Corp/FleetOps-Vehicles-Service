@@ -6,7 +6,6 @@ package com.fleetops.vehicles.controllers;
 import com.fleetops.vehicles.dto.request.*;
 import com.fleetops.vehicles.dto.response.*;
 import com.fleetops.vehicles.models.entities.EstadoReserva;
-import com.fleetops.vehicles.models.entities.ReservaVehiculo;
 import com.fleetops.vehicles.services.application.SagaService;
 import com.fleetops.vehicles.services.application.TipoVehiculoService;
 import com.fleetops.vehicles.services.application.VehicleService;
@@ -24,7 +23,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.List;
@@ -147,27 +145,6 @@ public class VehicleController {
         // Si el ID no existe, el GlobalExceptionHandler (ControllerAdvice) capturará el
         // error del servicio y devolverá un 404 automáticamente.
         return ResponseEntity.ok(tipoVehiculoService.findById(id));
-    }
-
-    // =========================================================================
-    // CONSULTAS ANIDADAS: VEHÍCULOS POR TIPO (BÚSQUEDA CRUZADA)
-    // =========================================================================
-
-    // Endpoint: GET /vehiculos/disponibles/tipo/nombre/{nombreTipo}
-    // REGLA DE DISEÑO REST: Uso de URLs descriptivas.
-    // Aunque este método devuelve vehículos, está filtrando por una propiedad del
-    // catálogo ("tipo").
-    @GetMapping("/disponibles/tipo/nombre/{nombreTipo}")
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    @Operation(summary = "Buscar vehículos disponibles filtrados por categoría", description = "Busca vehículos físicos listos para operar mediante coincidencia flexible de texto (ej. 'furgon'). Retorna resultados paginados.")
-    public ResponseEntity<Page<VehicleResponse>> getDisponiblesByNombreTipo(
-            @PathVariable String nombreTipo,
-            Pageable pageable) {
-
-        // Llama al servicio de vehículos (vehicleService) para realizar la búsqueda
-        // optimizada en base de datos.
-        // Retorna la página exacta de los vehículos aptos (HTTP 200).
-        return ResponseEntity.ok(vehicleService.findDisponiblesByNombreTipo(nombreTipo, pageable));
     }
 
     // =====================================================
@@ -320,37 +297,6 @@ public class VehicleController {
         return ResponseEntity.noContent().build();
     }
 
-    // =========================================================================
-    // CONSULTAS DE INVENTARIO Y RECUPERACIÓN DE ACTIVOS (READ)
-    // =========================================================================
-
-    // @GetMapping: Mapea peticiones HTTP de tipo GET hacia la raíz de este
-    // controlador (/vehiculos).
-    // Su semántica REST indica que es una operación idempotente y segura (solo lee,
-    // no modifica datos).
-    @GetMapping
-    // @PreAuthorize: Implementa seguridad de lectura abierta a múltiples roles
-    // operativos.
-    // A diferencia de la escritura, la visualización de la flota está permitida
-    // para personal operativo y administrativo.
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    // @Operation: Documenta el contrato de la API en Swagger para los
-    // desarrolladores cliente (Frontend/Mobile).
-    @Operation(summary = "Listar todos los vehículos", description = "Retorna una lista paginada del catálogo completo de vehículos activos.")
-    // ResponseEntity<Page<VehicleResponse>>: Envuelve la respuesta en una
-    // estructura HTTP que soporta metadatos de paginación.
-    // Pageable pageable: Spring Boot captura automáticamente los Query Params de la
-    // URL (ej: ?page=0&size=10) y los inyecta aquí.
-    public ResponseEntity<Page<VehicleResponse>> findAll(Pageable pageable) {
-
-        // PATRÓN DE DISEÑO: Paginación a nivel de Presentación.
-        // Pasa el objeto de control de página directo al servicio para que la consulta
-        // SQL use LIMIT y OFFSET.
-        // Retorna HTTP 200 (OK) asegurando que el servidor nunca colapse por
-        // desbordamiento de memoria RAM (OOM) al consultar flotas masivas.
-        return ResponseEntity.ok(vehicleService.findAll(pageable));
-    }
-
     // @GetMapping("/inactivos"): Define una sub-ruta específica para auditar el
     // "cementerio" o papelera de vehículos.
     @GetMapping("/inactivos")
@@ -369,47 +315,6 @@ public class VehicleController {
         // Delega la recuperación del inventario inactivo al servicio de aplicación.
         // Envuelve el resultado en un código de estado HTTP 200 (OK).
         return ResponseEntity.ok(vehicleService.getDeletedVehicles(page, size));
-    }
-
-    // =========================================================================
-    // BÚSQUEDAS ESPECÍFICAS (POR ID Y PLACA)
-    // =========================================================================
-
-    // @GetMapping("/{id}"): Captura peticiones GET directas a un recurso específico
-    // mediante su llave primaria en la URL.
-    @GetMapping("/{id}")
-    // @PreAuthorize: Mantiene la política de lectura transversal para los roles
-    // operativos.
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    // @Operation: Clarifica que este endpoint devuelve la "ficha técnica" o detalle
-    // en profundidad de un solo automotor.
-    @Operation(summary = "Consultar vehículo por ID", description = "Obtiene la ficha técnica completa de un vehículo mediante su identificador interno (UUID).")
-    // @PathVariable UUID id: Transforma dinámicamente el segmento de la ruta en un
-    // objeto UUID de Java de forma segura.
-    public ResponseEntity<VehicleResponse> findById(@PathVariable UUID id) {
-
-        // Ejecuta la búsqueda de alta precisión por ID.
-        // Si el ID no existe, el servicio lanzará una excepción que el ControllerAdvice
-        // convertirá en HTTP 404.
-        // Si tiene éxito, retorna HTTP 200 (OK) con el JSON del vehículo.
-        return ResponseEntity.ok(vehicleService.findById(id));
-    }
-
-    // @GetMapping("/placa/{placa}"): Habilita la búsqueda natural. Los operadores
-    // humanos piensan en placas, no en UUIDs.
-    @GetMapping("/placa/{placa}")
-    // @PreAuthorize: Accesible por los roles base para facilitar consultas rápidas
-    // en porterías o terminales de despacho.
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    // @Operation: Anuncia en Swagger la disponibilidad de esta consulta acelerada.
-    @Operation(summary = "Consultar vehículo por placa", description = "Localiza rápidamente la información de un vehículo usando su número de placa.")
-    // @PathVariable String placa: Captura el parámetro alfanumérico (ej:
-    // /vehiculos/placa/XYZ-789).
-    public ResponseEntity<VehicleResponse> findByPlaca(@PathVariable String placa) {
-
-        // Llama a la lógica de negocio especializada en resolver placas (insensible a
-        // mayúsculas) y responde HTTP 200 (OK).
-        return ResponseEntity.ok(vehicleService.findByPlaca(placa));
     }
 
     // =========================================================================
@@ -456,6 +361,215 @@ public class VehicleController {
         // tiene éxito, retorna HTTP 200 (OK).
         return ResponseEntity.ok(vehicleService.reactivateByPlaca(placa, motivo));
     }
+
+    // =========================================================================
+    // CONSULTAS DE INVENTARIO Y RECUPERACIÓN DE ACTIVOS (READ)
+    // =========================================================================
+
+    // @GetMapping: Mapea peticiones HTTP de tipo GET hacia la raíz de este
+    // controlador (/vehiculos).
+    // Su semántica REST indica que es una operación idempotente y segura (solo lee,
+    // no modifica datos).
+    @GetMapping
+    // @PreAuthorize: Implementa seguridad de lectura abierta a múltiples roles
+    // operativos.
+    // A diferencia de la escritura, la visualización de la flota está permitida
+    // para personal operativo y administrativo.
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    // @Operation: Documenta el contrato de la API en Swagger para los
+    // desarrolladores cliente (Frontend/Mobile).
+    @Operation(summary = "Listar todos los vehículos", description = "Retorna una lista paginada del catálogo completo de vehículos activos.")
+    // ResponseEntity<Page<VehicleResponse>>: Envuelve la respuesta en una
+    // estructura HTTP que soporta metadatos de paginación.
+    // Pageable pageable: Spring Boot captura automáticamente los Query Params de la
+    // URL (ej: ?page=0&size=10) y los inyecta aquí.
+    public ResponseEntity<Page<VehicleResponse>> findAll(Pageable pageable) {
+
+        // PATRÓN DE DISEÑO: Paginación a nivel de Presentación.
+        // Pasa el objeto de control de página directo al servicio para que la consulta
+        // SQL use LIMIT y OFFSET.
+        // Retorna HTTP 200 (OK) asegurando que el servidor nunca colapse por
+        // desbordamiento de memoria RAM (OOM) al consultar flotas masivas.
+        return ResponseEntity.ok(vehicleService.findAll(pageable));
+    }
+
+    // =========================================================================
+    // CONSULTAS ANIDADAS: VEHÍCULOS POR TIPO (BÚSQUEDA CRUZADA)
+    // =========================================================================
+
+    // Endpoint: GET /vehiculos/disponibles/tipo/nombre/{nombreTipo}
+    // REGLA DE DISEÑO REST: Uso de URLs descriptivas.
+    // Aunque este método devuelve vehículos, está filtrando por una propiedad del
+    // catálogo ("tipo").
+    @GetMapping("/disponibles/tipo/{nombreTipo}")
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    @Operation(summary = "Buscar vehículos disponibles filtrados por categoría", description = "Busca vehículos físicos listos para operar mediante coincidencia flexible de texto (ej. 'furgon'). Retorna resultados paginados.")
+    public ResponseEntity<Page<VehicleResponse>> getDisponiblesByNombreTipo(
+            @PathVariable String nombreTipo,
+            Pageable pageable) {
+
+        // Llama al servicio de vehículos (vehicleService) para realizar la búsqueda
+        // optimizada en base de datos.
+        // Retorna la página exacta de los vehículos aptos (HTTP 200).
+        return ResponseEntity.ok(vehicleService.findDisponiblesByNombreTipo(nombreTipo, pageable));
+    }
+
+    // =========================================================================
+    // BÚSQUEDAS ESPECÍFICAS (POR ID Y PLACA)
+    // =========================================================================
+
+    // @GetMapping("/{id}"): Captura peticiones GET directas a un recurso específico
+    // mediante su llave primaria en la URL.
+    @GetMapping("/{id}")
+    // @PreAuthorize: Mantiene la política de lectura transversal para los roles
+    // operativos.
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    // @Operation: Clarifica que este endpoint devuelve la "ficha técnica" o detalle
+    // en profundidad de un solo automotor.
+    @Operation(summary = "Consultar vehículo por ID", description = "Obtiene la ficha técnica completa de un vehículo mediante su identificador interno (UUID).")
+    // @PathVariable UUID id: Transforma dinámicamente el segmento de la ruta en un
+    // objeto UUID de Java de forma segura.
+    public ResponseEntity<VehicleResponse> findById(@PathVariable UUID id) {
+
+        // Ejecuta la búsqueda de alta precisión por ID.
+        // Si el ID no existe, el servicio lanzará una excepción que el ControllerAdvice
+        // convertirá en HTTP 404.
+        // Si tiene éxito, retorna HTTP 200 (OK) con el JSON del vehículo.
+        return ResponseEntity.ok(vehicleService.findById(id));
+    }
+
+    // @GetMapping("/placa/{placa}"): Habilita la búsqueda natural. Los operadores
+    // humanos piensan en placas, no en UUIDs.
+    @GetMapping("/placa/{placa}")
+    // @PreAuthorize: Accesible por los roles base para facilitar consultas rápidas
+    // en porterías o terminales de despacho.
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    // @Operation: Anuncia en Swagger la disponibilidad de esta consulta acelerada.
+    @Operation(summary = "Consultar vehículo por placa", description = "Localiza rápidamente la información de un vehículo usando su número de placa.")
+    // @PathVariable String placa: Captura el parámetro alfanumérico (ej:
+    // /vehiculos/placa/XYZ-789).
+    public ResponseEntity<VehicleResponse> findByPlaca(@PathVariable String placa) {
+
+        // Llama a la lógica de negocio especializada en resolver placas (insensible a
+        // mayúsculas) y responde HTTP 200 (OK).
+        return ResponseEntity.ok(vehicleService.findByPlaca(placa));
+    }
+
+    // =====================================================
+    // ================== DISPONIBILIDAD ==================
+    // =====================================================
+
+    // =========================================================================
+    // CONSULTAS ULTRALIGERAS DE APTITUD OPERATIVA
+    // =========================================================================
+
+    // @GetMapping("/{id}/disponibilidad"): Mapea peticiones HTTP de tipo GET a la
+    // sub-ruta de disponibilidad por ID.
+    // Semántica REST: Consulta de lectura rápida diseñada para responder de forma
+    // inmediata a otros componentes o microservicios.
+    @GetMapping("/{id}/disponibilidad")
+    // @PreAuthorize: Mantiene el acceso transversal para roles con permisos de
+    // lectura y consulta de la flota.
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    // @Operation: Documenta en Swagger el propósito de optimización de rendimiento
+    // de este endpoint en particular.
+    @Operation(summary = "Evaluación de aptitud operativa", description = "Devuelve un DTO ultraligero que permite a otros sistemas saber inmediatamente si un activo está en condiciones de ser bloqueado.")
+    // public: Permite la exposición del método en el ecosistema web de Spring.
+    // ResponseEntity<DisponibilidadResponse>: Envuelve un DTO optimizado (Java
+    // Record) que reduce drásticamente el tamaño del JSON de respuesta.
+    // @PathVariable UUID id: Captura el identificador único del vehículo directo
+    // desde la URL.
+    public ResponseEntity<DisponibilidadResponse> getDisponibilidad(@PathVariable UUID id) {
+
+        // REGLA DE NEGOCIO / EFICIENCIA:
+        // Evita descargar toda la ficha técnica (marca, modelo, chasis, SOAT) si el
+        // cliente solo requiere validar un booleano (True/False).
+        // Envuelve la respuesta del servicio en un código de estado HTTP 200 (OK).
+        return ResponseEntity.ok(vehicleService.getDisponibilidad(id));
+    }
+
+    // @GetMapping("/placa/{placa}/disponibilidad"): Mapea peticiones GET utilizando
+    // la clave natural alfanumérica de la placa.
+    @GetMapping("/placa/{placa}/disponibilidad")
+    // @PreAuthorize: Accesible por los roles autorizados para consultas operativas
+    // rápidas desde terminales de campo.
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    // @Operation: Registra en la consola de OpenAPI que el endpoint evalúa la
+    // aptitud del camión basándose en políticas de negocio vigentes.
+    @Operation(summary = "Evaluación de aptitud por placa", description = "Permite inspeccionar la salud operativa del vehículo cruzando su placa contra las políticas de negocio.")
+    // @PathVariable String placa: Extrae el texto de la placa directamente del
+    // segmento dinámico de la URL.
+    public ResponseEntity<DisponibilidadResponse> getDisponibilidadByPlaca(@PathVariable String placa) {
+
+        // Delega la validación liviana al servicio pasándole la placa y responde con un
+        // código HTTP 200 (OK).
+        return ResponseEntity.ok(vehicleService.getDisponibilidadByPlaca(placa));
+    }
+
+    // =========================================================================
+    // ENDPOINTS DE FILTRADO PARA DASHBOARDS (TABLEROS DE CONTROL)
+    // =========================================================================
+
+    // @GetMapping("/disponibles"): Mapea peticiones GET para aislar los camiones
+    // listos y libres para trabajar.
+    @GetMapping("/disponibles")
+    // @PreAuthorize: Permite el acceso a los perfiles que planifican rutas o
+    // asignan despachos diarios.
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    // @Operation: Detalla en Swagger que esta ruta sirve como fuente de datos para
+    // el tablero de vehículos ociosos.
+    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
+    // Pageable pageable: Inyecta los controles de paginación y ordenación de Spring
+    // Data (?page=0&size=10) desde la petición web.
+    public ResponseEntity<Page<VehicleResponse>> findDisponibles(Pageable pageable) {
+
+        // Llama al método del servicio que filtra directamente en la base de datos los
+        // activos con estado 'DISPONIBLE'.
+        return ResponseEntity.ok(vehicleService.findDisponibles(pageable));
+    }
+
+    // @GetMapping("/reservados"): Mapea peticiones GET destinadas a visualizar los
+    // camiones comprometidos comercialmente.
+    @GetMapping("/reservados")
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    // @Operation: Mapea la documentación interactiva (Nota: Aunque la descripción
+    // original se repitió, este endpoint expone activos bloqueados por viajes).
+    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
+    public ResponseEntity<Page<VehicleResponse>> findReservados(Pageable pageable) {
+
+        // Solicita al servicio la lista paginada de vehículos en estado 'RESERVADO' y
+        // responde HTTP 200 (OK).
+        return ResponseEntity.ok(vehicleService.findReservados(pageable));
+    }
+
+    // @GetMapping("/mantenimiento"): Concentra las peticiones GET para auditar los
+    // activos que se encuentran bajo revisión técnica.
+    @GetMapping("/mantenimiento")
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    // @Operation: Provee metadatos en Swagger útiles para que el equipo de taller y
+    // mantenimiento consuma este listado.
+    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
+    public ResponseEntity<Page<VehicleResponse>> findMantenimiento(Pageable pageable) {
+
+        // Retorna un HTTP 200 (OK) con la porción pagitada de camiones en estado
+        // 'EN_MANTENIMIENTO'.
+        return ResponseEntity.ok(vehicleService.findMantenimiento(pageable));
+    }
+
+    // @GetMapping("/fueradeservicio"): Mapea peticiones GET para identificar
+    // vehículos críticos fuera de operación por fallas o siniestros.
+    @GetMapping("/fueradeservicio")
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    // @Operation: Documenta en el contrato OpenAPI la ruta destinada a la revisión
+    // de pérdidas operacionales o bajas provisionales.
+    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
+    public ResponseEntity<Page<VehicleResponse>> findFueraServicio(Pageable pageable) {
+
+        // Ejecuta la consulta optimizada y devuelve un HTTP 200 (OK) con los activos
+        // marcados como 'FUERA_DE_SERVICIO'.
+        return ResponseEntity.ok(vehicleService.findFueraServicio(pageable));
+    }
+
     //////////////////////////////////////
 
     // =====================================================
@@ -614,121 +728,6 @@ public class VehicleController {
     }
 
     // =====================================================
-    // ================== DISPONIBILIDAD ==================
-    // =====================================================
-
-    // =========================================================================
-    // CONSULTAS ULTRALIGERAS DE APTITUD OPERATIVA
-    // =========================================================================
-
-    // @GetMapping("/{id}/disponibilidad"): Mapea peticiones HTTP de tipo GET a la
-    // sub-ruta de disponibilidad por ID.
-    // Semántica REST: Consulta de lectura rápida diseñada para responder de forma
-    // inmediata a otros componentes o microservicios.
-    @GetMapping("/{id}/disponibilidad")
-    // @PreAuthorize: Mantiene el acceso transversal para roles con permisos de
-    // lectura y consulta de la flota.
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    // @Operation: Documenta en Swagger el propósito de optimización de rendimiento
-    // de este endpoint en particular.
-    @Operation(summary = "Evaluación de aptitud operativa", description = "Devuelve un DTO ultraligero que permite a otros sistemas saber inmediatamente si un activo está en condiciones de ser bloqueado.")
-    // public: Permite la exposición del método en el ecosistema web de Spring.
-    // ResponseEntity<DisponibilidadResponse>: Envuelve un DTO optimizado (Java
-    // Record) que reduce drásticamente el tamaño del JSON de respuesta.
-    // @PathVariable UUID id: Captura el identificador único del vehículo directo
-    // desde la URL.
-    public ResponseEntity<DisponibilidadResponse> getDisponibilidad(@PathVariable UUID id) {
-
-        // REGLA DE NEGOCIO / EFICIENCIA:
-        // Evita descargar toda la ficha técnica (marca, modelo, chasis, SOAT) si el
-        // cliente solo requiere validar un booleano (True/False).
-        // Envuelve la respuesta del servicio en un código de estado HTTP 200 (OK).
-        return ResponseEntity.ok(vehicleService.getDisponibilidad(id));
-    }
-
-    // @GetMapping("/placa/{placa}/disponibilidad"): Mapea peticiones GET utilizando
-    // la clave natural alfanumérica de la placa.
-    @GetMapping("/placa/{placa}/disponibilidad")
-    // @PreAuthorize: Accesible por los roles autorizados para consultas operativas
-    // rápidas desde terminales de campo.
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    // @Operation: Registra en la consola de OpenAPI que el endpoint evalúa la
-    // aptitud del camión basándose en políticas de negocio vigentes.
-    @Operation(summary = "Evaluación de aptitud por placa", description = "Permite inspeccionar la salud operativa del vehículo cruzando su placa contra las políticas de negocio.")
-    // @PathVariable String placa: Extrae el texto de la placa directamente del
-    // segmento dinámico de la URL.
-    public ResponseEntity<DisponibilidadResponse> getDisponibilidadByPlaca(@PathVariable String placa) {
-
-        // Delega la validación liviana al servicio pasándole la placa y responde con un
-        // código HTTP 200 (OK).
-        return ResponseEntity.ok(vehicleService.getDisponibilidadByPlaca(placa));
-    }
-
-    // =========================================================================
-    // ENDPOINTS DE FILTRADO PARA DASHBOARDS (TABLEROS DE CONTROL)
-    // =========================================================================
-
-    // @GetMapping("/disponibles"): Mapea peticiones GET para aislar los camiones
-    // listos y libres para trabajar.
-    @GetMapping("/disponibles")
-    // @PreAuthorize: Permite el acceso a los perfiles que planifican rutas o
-    // asignan despachos diarios.
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    // @Operation: Detalla en Swagger que esta ruta sirve como fuente de datos para
-    // el tablero de vehículos ociosos.
-    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
-    // Pageable pageable: Inyecta los controles de paginación y ordenación de Spring
-    // Data (?page=0&size=10) desde la petición web.
-    public ResponseEntity<Page<VehicleResponse>> findDisponibles(Pageable pageable) {
-
-        // Llama al método del servicio que filtra directamente en la base de datos los
-        // activos con estado 'DISPONIBLE'.
-        return ResponseEntity.ok(vehicleService.findDisponibles(pageable));
-    }
-
-    // @GetMapping("/reservados"): Mapea peticiones GET destinadas a visualizar los
-    // camiones comprometidos comercialmente.
-    @GetMapping("/reservados")
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    // @Operation: Mapea la documentación interactiva (Nota: Aunque la descripción
-    // original se repitió, este endpoint expone activos bloqueados por viajes).
-    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
-    public ResponseEntity<Page<VehicleResponse>> findReservados(Pageable pageable) {
-
-        // Solicita al servicio la lista paginada de vehículos en estado 'RESERVADO' y
-        // responde HTTP 200 (OK).
-        return ResponseEntity.ok(vehicleService.findReservados(pageable));
-    }
-
-    // @GetMapping("/mantenimiento"): Concentra las peticiones GET para auditar los
-    // activos que se encuentran bajo revisión técnica.
-    @GetMapping("/mantenimiento")
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    // @Operation: Provee metadatos en Swagger útiles para que el equipo de taller y
-    // mantenimiento consuma este listado.
-    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
-    public ResponseEntity<Page<VehicleResponse>> findMantenimiento(Pageable pageable) {
-
-        // Retorna un HTTP 200 (OK) con la porción pagitada de camiones en estado
-        // 'EN_MANTENIMIENTO'.
-        return ResponseEntity.ok(vehicleService.findMantenimiento(pageable));
-    }
-
-    // @GetMapping("/fueradeservicio"): Mapea peticiones GET para identificar
-    // vehículos críticos fuera de operación por fallas o siniestros.
-    @GetMapping("/fueradeservicio")
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    // @Operation: Documenta en el contrato OpenAPI la ruta destinada a la revisión
-    // de pérdidas operacionales o bajas provisionales.
-    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
-    public ResponseEntity<Page<VehicleResponse>> findFueraServicio(Pageable pageable) {
-
-        // Ejecuta la consulta optimizada y devuelve un HTTP 200 (OK) con los activos
-        // marcados como 'FUERA_DE_SERVICIO'.
-        return ResponseEntity.ok(vehicleService.findFueraServicio(pageable));
-    }
-
-    // =====================================================
     // ==================== RESERVAS (SAGA) ===============
     // =====================================================
 
@@ -749,7 +748,7 @@ public class VehicleController {
     // @PostMapping("/{id}/reservas"): Mapea la petición POST para iniciar el
     // bloqueo de un vehículo.
     // Paso 1 de la SAGA: Iniciar el bloqueo temporal (Estado PENDIENTE).
-    @PostMapping("/{id}/reservas")
+    @PostMapping("/{id}/iniciar-reserva")
     // @PreAuthorize: Permite que tanto los operadores de logística como los
     // administradores inicien reservas.
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
@@ -770,7 +769,7 @@ public class VehicleController {
 
     // @PostMapping("/placa/{placa}/reservas"): Variante operativa para iniciar la
     // Saga usando la placa comercial.
-    @PostMapping("/placa/{placa}/reservas")
+    @PostMapping("/placa/{placa}/iniciar-reserva")
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: Documenta que facilita la integración con sistemas satélite (ej.
     // lectores de patio).
@@ -781,28 +780,6 @@ public class VehicleController {
         // Delega el inicio de la orquestación al servicio usando la placa y retorna
         // HTTP 201 (CREATED).
         return ResponseEntity.status(HttpStatus.CREATED).body(sagaService.iniciarReservaByPlaca(placa, request));
-    }
-
-    // =========================================================================
-    // CONSULTA DE ESTADO DE LA SAGA (POLLING)
-    // =========================================================================
-
-    // @GetMapping("/reservas/{reservaId}"): Permite a otros microservicios
-    // consultar en qué va el trámite.
-    @GetMapping("/reservas/{reservaId}")
-    // @PreAuthorize: Lectura abierta para todo el personal autorizado.
-    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    // @Operation: Define este endpoint como el monitor de la transacción.
-    @Operation(summary = "Consultar estado del expediente", description = "Permite inspeccionar la bitácora viva de la Saga de reserva.")
-    public ResponseEntity<ReservaResponse> obtenerReserva(@PathVariable UUID reservaId) {
-
-        // PATRÓN FUNCIONAL: Programación Declarativa con Optionals.
-        // Intenta buscar la reserva. Si la encuentra (.map), la envuelve en un HTTP 200
-        // (OK).
-        // Si el Optional viene vacío (.orElse), retorna un HTTP 404 (Not Found).
-        return sagaService.findReservaById(reservaId)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
     }
 
     // =========================================================================
@@ -848,7 +825,7 @@ public class VehicleController {
     // @PostMapping("/reservas/placa/{numeroPlaca}/confirmar"): Commit de la saga
     // apuntando a la llave natural (placa).
 
-   // Endpoint para confirmar todas las reservas pendientes de una placa de golpe
+    // Endpoint para confirmar todas las reservas pendientes de una placa de golpe
     @PostMapping("/placa/{numeroPlaca}/reservas/confirmar")
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     @Operation(summary = "Comando Masivo: Consolidación por Placa", description = "Confirma de una sola vez todas las reservas que se encuentren PENDIENTES para un vehículo específico.")
@@ -859,12 +836,13 @@ public class VehicleController {
 
         // Armamos un JSON dinámico para mayor claridad en el Frontend
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("message", "Se confirmaron exitosamente " + reservasConfirmadas.size() + " reserva(s) para el vehículo " + numeroPlaca.toUpperCase());
+        response.put("message", "Se confirmaron exitosamente " + reservasConfirmadas.size()
+                + " reserva(s) para el vehículo " + numeroPlaca.toUpperCase());
         response.put("placa", numeroPlaca.toUpperCase());
         response.put("timestamp", LocalDateTime.now().toString());
-        
+
         // Aquí pasamos la lista completa de reservas confirmadas
-        response.put("reservasAfectadas", reservasConfirmadas); 
+        response.put("reservasAfectadas", reservasConfirmadas);
 
         return ResponseEntity.ok(response);
     }
@@ -882,33 +860,61 @@ public class VehicleController {
     }
 
     // =========================================================================
+    // CONSULTA DE ESTADO DE LA SAGA (POLLING)
+    // =========================================================================
+
+    // @GetMapping("/reservas/{reservaId}"): Permite a otros microservicios
+    // consultar en qué va el trámite.
+    @GetMapping("/reservas/{reservaId}")
+    // @PreAuthorize: Lectura abierta para todo el personal autorizado.
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
+    // @Operation: Define este endpoint como el monitor de la transacción.
+    @Operation(summary = "Consultar estado del expediente", description = "Permite inspeccionar la bitácora viva de la Saga de reserva.")
+    public ResponseEntity<ReservaResponse> obtenerReserva(@PathVariable UUID reservaId) {
+
+        // PATRÓN FUNCIONAL: Programación Declarativa con Optionals.
+        // Intenta buscar la reserva. Si la encuentra (.map), la envuelve en un HTTP 200
+        // (OK).
+        // Si el Optional viene vacío (.orElse), retorna un HTTP 404 (Not Found).
+        return sagaService.findReservaById(reservaId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // =========================================================================
     // SAGA ROLLBACK: COMPENSACIÓN ANTE FALLOS
     // =========================================================================
 
-    // @PostMapping("/reservas/{reservaId}/compensar"): Endpoint de rescate si un
-    // microservicio externo falla.
-    // Paso Alterno (FALLO) de la SAGA: Revertir todo para no dejar vehículos
-    // bloqueados inútilmente.
-    @PostMapping("/reservas/{reservaId}/compensar")
-    // @PreAuthorize: Restricción crítica. Solo un ADMIN (o el sistema automatizado)
-    // debería poder cancelar flujos en progreso.
-    @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Comando Saga: Anulación (Rollback)", description = "Fase Alterna: Destruye el compromiso de reserva liberando nuevamente el activo si la orquestación fracasa.")
-    // @RequestParam String motivo: Obliga a dejar una evidencia técnica del porqué
-    // falló la transacción.
-    public ResponseEntity<String> compensarReserva(@PathVariable UUID reservaId, @RequestParam String motivo) {
+  // Fíjate que diga {idReserva} coincidiendo exactamente con el parámetro
+    @PostMapping("/reservas/{idReserva}/compensar")
+    public ResponseEntity<Map<String, Object>> compensarReserva(
+            @PathVariable UUID idReserva, 
+            @RequestParam String motivo) {
+        
+        // Aquí llamas a tu sagaService
+        ReservaResponse reservaCancelada = sagaService.compensarPorReservaId(idReserva, motivo);
+        
+        return ResponseEntity.ok(Map.of(
+                "message", "La reserva fue cancelada con éxito.",
+                "reserva", reservaCancelada
+        ));
+    }
 
-        // Ejemplo de Negocio: El microservicio de pagos rechazó la tarjeta del cliente.
-        // Facturación le avisa a FleetOps que debe liberar ("compensar") el camión que
-        // había apartado temporalmente.
-        boolean compensado = sagaService.compensarPorReservaId(reservaId, motivo);
+    // Endpoint para cancelar por Placa
+    @PostMapping("/placa/{placa}/reservas/cancelar")
+    public ResponseEntity<Map<String, Object>> compensarReservasMasivas(
+            @PathVariable String placa,
+            @RequestParam String motivo) {
 
-        // Operador ternario: Retorna HTTP 200 (OK) con un mensaje claro si se liberó el
-        // activo,
-        // o HTTP 404 (Not Found) si la reserva no existía para ser compensada.
-        return compensado
-                ? ResponseEntity.ok("Reserva compensada exitosamente")
-                : ResponseEntity.notFound().build();
+        List<ReservaResponse> canceladas = sagaService.cancelarReservasPorPlaca(placa, motivo);
+
+        String mensaje = canceladas.isEmpty()
+                ? "No se encontraron reservas para cancelar, o el vehículo está operando actualmente."
+                : "Las reservas del vehículo con placa " + placa.toUpperCase() + " fueron canceladas con éxito.";
+
+        return ResponseEntity.ok(Map.of(
+                "message", mensaje,
+                "reservas", canceladas));
     }
 
     // LISTAR TODAS LAS RESERVAS GLOBALES
@@ -939,7 +945,7 @@ public class VehicleController {
     @GetMapping("/reservas/pendientes")
     // @PreAuthorize: Restringe la vista a roles operativos ('OPERADOR', 'ADMIN') ya
     // que son ellos quienes aprueban o rechazan.
-    @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Documenta que aquí residen las reservas en el "Paso 1" del Patrón
     // SAGA.
     @Operation(summary = "Listar reservas pendientes", description = "Obtiene la bandeja de entrada de reservas en estado PENDIENTE esperando confirmación, ordenadas de la más reciente a la más antigua.")
@@ -955,7 +961,7 @@ public class VehicleController {
     // @GetMapping("/reservas/confirmadas"): Endpoint para auditar las transacciones
     // distribuidas que tuvieron éxito (Commit).
     @GetMapping("/reservas/confirmadas")
-    @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: (Texto corregido) Se ajustó para reflejar que lista reservas
     // exitosas, no pendientes.
     @Operation(summary = "Listar reservas confirmadas", description = "Obtiene el historial de reservas en estado CONFIRMADA que concluyeron la orquestación exitosamente.")
@@ -966,26 +972,11 @@ public class VehicleController {
         return ResponseEntity.ok(sagaService.findReservasConfirmadas(pageable));
     }
 
-    // LISTAR RESERVAS FALLIDAS (BANDEJA DE ERRORES TÉCNICOS)
-    // @GetMapping("/reservas/fallidas"): Mapea el monitor de errores técnicos o
-    // caídas de red durante la orquestación SAGA.
-    @GetMapping("/reservas/fallidas")
-    @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
-    // @Operation: (Texto corregido) Aclara que esta es una bandeja de diagnóstico
-    // para sistemas caídos.
-    @Operation(summary = "Listar reservas fallidas", description = "Obtiene el registro de auditoría de reservas en estado FALLIDA debido a errores técnicos o caídas de microservicios externos.")
-    public ResponseEntity<Page<ReservaResponse>> getReservasFallidas(Pageable pageable) {
-
-        // Ejecuta la consulta de diagnóstico y retorna la colección de transacciones
-        // rotas mediante HTTP 200 (OK).
-        return ResponseEntity.ok(sagaService.findReservasFallidas(pageable));
-    }
-
     // LISTAR RESERVAS CANCELADAS (BANDEJA DE COMPENSACIONES OPERATIVAS)
     // @GetMapping("/reservas/canceladas"): Mapea la consulta para la bandeja de
     // anulaciones y reversiones.
     @GetMapping("/reservas/canceladas")
-    @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO',  'OPERADOR', 'ADMIN')")
     // @Operation: (Texto corregido) Documenta que expone recursos liberados tras un
     // Rollback (ej. cliente canceló o pago rechazado).
     @Operation(summary = "Listar reservas canceladas", description = "Obtiene la bandeja de entrada de reservas en estado CANCELADA (Compensadas/Rollback) ordenadas de la más reciente a la más antigua.")
@@ -994,6 +985,21 @@ public class VehicleController {
         // Delega al servicio la recuperación de los históricos de reversión y retorna
         // la página con un HTTP 200 (OK).
         return ResponseEntity.ok(sagaService.findReservasCanceladas(pageable));
+    }
+
+    // LISTAR RESERVAS FALLIDAS (BANDEJA DE ERRORES TÉCNICOS)
+    // @GetMapping("/reservas/fallidas"): Mapea el monitor de errores técnicos o
+    // caídas de red durante la orquestación SAGA.
+    @GetMapping("/reservas/fallidas")
+    @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO',  'OPERADOR', 'ADMIN')")
+    // @Operation: (Texto corregido) Aclara que esta es una bandeja de diagnóstico
+    // para sistemas caídos.
+    @Operation(summary = "Listar reservas fallidas", description = "Obtiene el registro de auditoría de reservas en estado FALLIDA debido a errores técnicos o caídas de microservicios externos.")
+    public ResponseEntity<Page<ReservaResponse>> getReservasFallidas(Pageable pageable) {
+
+        // Ejecuta la consulta de diagnóstico y retorna la colección de transacciones
+        // rotas mediante HTTP 200 (OK).
+        return ResponseEntity.ok(sagaService.findReservasFallidas(pageable));
     }
 
     // LISTAR RESERVAS POR PLACA (HISTORIAL DEL VEHÍCULO)
