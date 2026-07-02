@@ -6,7 +6,10 @@ import com.fleetops.vehicles.exception.DuplicateResourceException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
 import com.fleetops.vehicles.mapper.DtoMapperHistorial;
 import com.fleetops.vehicles.mapper.DtoMapperVehicle;
-import com.fleetops.vehicles.models.entities.*;
+import com.fleetops.vehicles.models.entities.EstadoVehiculo;
+import com.fleetops.vehicles.models.entities.HistorialEstadoVehiculo;
+import com.fleetops.vehicles.models.entities.TipoVehiculo;
+import com.fleetops.vehicles.models.entities.Vehiculo;
 import com.fleetops.vehicles.dto.request.EstadoCambioRequest;
 import com.fleetops.vehicles.dto.request.VehicleRequest;
 import com.fleetops.vehicles.dto.request.VehicleUpdateRequest;
@@ -28,9 +31,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.text.Normalizer;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 
 // @Slf4j: Anotación de Lombok que genera una herramienta para escribir registros (logs) en la consola del servidor.
@@ -502,11 +503,11 @@ public class VehicleServiceImpl implements VehicleService {
         Vehiculo guardado = vehicleRepository.save(vehiculo);
 
         // Concatenamos el motivo de la reactivación para la bitácora.
-        String motivo_completo = "Reactivacion del vehiculo: " + motivo;
+        String motivoCompleto = "Reactivacion del vehiculo: " + motivo;
 
         // AUDITORÍA: Registra en el historial quién y por qué se reactivó el vehículo.
         // Esto es esencial para cumplir con normativas de seguridad de flota.
-        registrarHistorial(guardado, estadoAnterior, EstadoVehiculo.FUERA_DE_SERVICIO, motivo_completo,
+        registrarHistorial(guardado, estadoAnterior, EstadoVehiculo.FUERA_DE_SERVICIO, motivoCompleto,
                 "fleetops-vehicles",
                 null);
 
@@ -537,10 +538,10 @@ public class VehicleServiceImpl implements VehicleService {
         Vehiculo guardado = vehicleRepository.save(vehiculo);
 
         // Preparamos el motivo para el historial.
-        String motivo_completo = "Reactivacion del vehiculo: " + motivo;
+        String motivoCompleto = "Reactivacion del vehiculo: " + motivo;
 
         // 4. AUDITORÍA: Escribimos en el libro de eventos quién lo revivió y por qué.
-        registrarHistorial(guardado, estadoAnterior, EstadoVehiculo.FUERA_DE_SERVICIO, motivo_completo,
+        registrarHistorial(guardado, estadoAnterior, EstadoVehiculo.FUERA_DE_SERVICIO, motivoCompleto,
                 "fleetops-vehicles",
                 null);
 
@@ -778,11 +779,12 @@ public class VehicleServiceImpl implements VehicleService {
         // delegamos TODO el trabajo (filtro por estado, filtro por texto LIKE, y paginación)
         // directamente al motor de la base de datos (PostgreSQL/MySQL), que es mucho más rápido para esto.
 
-        return vehicleRepository.findByEstadoVehiculoAndActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase(
-                EstadoVehiculo.DISPONIBLE, // 1er parámetro: Filtra estrictamente los que están libres.
-                nombreTipo,                // 2do parámetro: El texto parcial (LIKE %nombreTipo%). 'ContainingIgnoreCase' asegura que "furgon" encuentre "Furgón".
-                pageable                   // 3er parámetro: Control de limit/offset (paginación) en SQL.
-        ).map(dtoMapperVehicle::toDto);    // Transforma el Page<Vehiculo> resultante a Page<VehicleResponse>.
+        return vehicleRepository
+                .findByEstadoVehiculoAndActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase(
+                        EstadoVehiculo.DISPONIBLE,
+                        nombreTipo,
+                        pageable)
+                .map(dtoMapperVehicle::toDto);
     }
 
     // PATRÓN DE DISEÑO: Append-Only Log (Registro de solo adición). Método privado que garantiza la inmutabilidad de la auditoría.

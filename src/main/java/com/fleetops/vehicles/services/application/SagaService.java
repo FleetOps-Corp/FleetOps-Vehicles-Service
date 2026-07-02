@@ -4,12 +4,10 @@ package com.fleetops.vehicles.services.application;
 // Importa los DTOs de petición y respuesta, garantizando que el servicio solo hable con objetos limpios.
 import com.fleetops.vehicles.dto.request.ReservaRequest;
 import com.fleetops.vehicles.dto.request.UpdateReservaDatesRequest;
-import com.fleetops.vehicles.dto.response.AgendaReservaResponse;
 import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.dto.response.SagaResponse;
 // Importa las entidades necesarias para el modelo de dominio.
 import com.fleetops.vehicles.models.entities.EstadoReserva;
-import com.fleetops.vehicles.models.entities.ReservaVehiculo;
 
 import java.util.List;
 // Importa herramientas del core de Java para manejar resultados opcionales y tipos de identificador.

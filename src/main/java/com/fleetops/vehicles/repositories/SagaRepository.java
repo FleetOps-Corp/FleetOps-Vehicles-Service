@@ -1,8 +1,6 @@
 // Define el paquete exclusivo para la capa de acceso a datos de las Sagas.
 package com.fleetops.vehicles.repositories;
 
-// Importa el DTO de respuesta (aunque no se usa en la interfaz, es una buena práctica dejarlo disponible).
-import com.fleetops.vehicles.dto.response.ReservaResponse;
 // Importa la entidad SagaVehiculo, que es el objeto que estamos persistiendo.
 import com.fleetops.vehicles.models.entities.SagaVehiculo;
 

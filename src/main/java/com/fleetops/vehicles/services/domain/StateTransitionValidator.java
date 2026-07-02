@@ -26,10 +26,20 @@ public class StateTransitionValidator {
     static {
         // REGLAS DE NEGOCIO: Rutas de estado.
         // Si el camión está DISPONIBLE, solo se le permite saltar a RESERVADO, MANTENIMIENTO o FUERA_DE_SERVICIO.
-        TRANSICIONES_PERMITIDAS.put(EstadoVehiculo.DISPONIBLE, EnumSet.of(EstadoVehiculo.RESERVADO, EstadoVehiculo.EN_MANTENIMIENTO, EstadoVehiculo.FUERA_DE_SERVICIO));
+        TRANSICIONES_PERMITIDAS.put(
+                EstadoVehiculo.DISPONIBLE,
+                EnumSet.of(
+                        EstadoVehiculo.RESERVADO,
+                        EstadoVehiculo.EN_MANTENIMIENTO,
+                        EstadoVehiculo.FUERA_DE_SERVICIO));
         
-        // Si el camión está RESERVADO, puede volver a DISPONIBLE o dañarse (FUERA_DE_SERVICIO), pero NO puede saltar directo al taller.
-        TRANSICIONES_PERMITIDAS.put(EstadoVehiculo.RESERVADO, EnumSet.of(EstadoVehiculo.DISPONIBLE, EstadoVehiculo.EN_MANTENIMIENTO, EstadoVehiculo.FUERA_DE_SERVICIO));
+        // Si el camión está RESERVADO, puede volver a DISPONIBLE o dañarse (FUERA_DE_SERVICIO).
+        TRANSICIONES_PERMITIDAS.put(
+                EstadoVehiculo.RESERVADO,
+                EnumSet.of(
+                        EstadoVehiculo.DISPONIBLE,
+                        EstadoVehiculo.EN_MANTENIMIENTO,
+                        EstadoVehiculo.FUERA_DE_SERVICIO));
         
         // Si el camión está EN MANTENIMIENTO, solo puede ser liberado (DISPONIBLE) o declarado inservible (FUERA_DE_SERVICIO).
         TRANSICIONES_PERMITIDAS.put(EstadoVehiculo.EN_MANTENIMIENTO, EnumSet.of(EstadoVehiculo.DISPONIBLE, EstadoVehiculo.FUERA_DE_SERVICIO));

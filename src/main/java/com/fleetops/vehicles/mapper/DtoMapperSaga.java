@@ -23,7 +23,9 @@ public class DtoMapperSaga {
     // Método principal: Convierte la entidad de base de datos a un objeto de respuesta (DTO).
     public SagaResponse toDto(SagaVehiculo saga) {
         // REGLA DE SEGURIDAD: Defensiva. Si la saga es nula, regresamos nulo para evitar errores 500.
-        if (saga == null) return null;
+        if (saga == null) {
+            return null;
+        }
 
         // Extraemos la entidad vehículo relacionada para facilitar la lectura del código.
         Vehiculo v = saga.getVehiculo();

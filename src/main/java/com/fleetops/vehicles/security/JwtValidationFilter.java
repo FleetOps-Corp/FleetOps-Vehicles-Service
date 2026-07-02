@@ -1,7 +1,6 @@
 // Define el paquete exclusivo para la configuración y control perimetral de seguridad del microservicio.
 package com.fleetops.vehicles.security;
 
-import com.fleetops.vehicles.security.TokenJwtConfig;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;

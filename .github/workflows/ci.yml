@@ -123,6 +123,12 @@ jobs:
       - name: Generar reporte de cobertura JaCoCo
         run: ./mvnw -B jacoco:report
 
+      - name: Verificar que el reporte JaCoCo existe
+        run: |
+          test -f target/jacoco.exec || (echo "Falta target/jacoco.exec — ejecuta tests con Maven antes de jacoco:report" && exit 1)
+          test -f target/site/jacoco/jacoco.xml || (echo "Falta target/site/jacoco/jacoco.xml" && exit 1)
+          test -s target/site/jacoco/jacoco.xml || (echo "jacoco.xml está vacío" && exit 1)
+
       # =========================================================================
       # SONARCLOUD -- TEMPORALMENTE DESHABILITADO (no eliminado)
       # =========================================================================

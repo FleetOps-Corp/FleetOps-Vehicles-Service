@@ -3,10 +3,19 @@ package com.fleetops.vehicles.controllers;
 
 // Su función es recibir peticiones HTTP, traducirlas y enviarlas al "Cerebro" (Capa de Servicios).
 
-import com.fleetops.vehicles.dto.request.*;
-import com.fleetops.vehicles.dto.response.*;
+import com.fleetops.vehicles.dto.request.EstadoCambioRequest;
+import com.fleetops.vehicles.dto.request.ReservaRequest;
+import com.fleetops.vehicles.dto.request.TipoVehiculoRequest;
+import com.fleetops.vehicles.dto.request.UpdateReservaDatesRequest;
+import com.fleetops.vehicles.dto.request.VehicleRequest;
+import com.fleetops.vehicles.dto.request.VehicleUpdateRequest;
+import com.fleetops.vehicles.dto.response.DisponibilidadResponse;
+import com.fleetops.vehicles.dto.response.HistorialEstadoResponse;
+import com.fleetops.vehicles.dto.response.ReservaResponse;
+import com.fleetops.vehicles.dto.response.SagaResponse;
+import com.fleetops.vehicles.dto.response.TipoVehiculoResponse;
+import com.fleetops.vehicles.dto.response.VehicleResponse;
 import com.fleetops.vehicles.models.entities.EstadoReserva;
-import com.fleetops.vehicles.models.entities.ReservaVehiculo;
 import com.fleetops.vehicles.services.application.SagaService;
 import com.fleetops.vehicles.services.application.TipoVehiculoService;
 import com.fleetops.vehicles.services.application.VehicleService;
@@ -21,13 +30,21 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 // =========================================================================
@@ -77,7 +94,10 @@ public class VehicleController {
     // nuevas categorías.
     @PreAuthorize("hasRole('ADMIN')")
     // DOCUMENTACIÓN SWAGGER: Describe qué hace la ruta para el equipo consumidor.
-    @Operation(summary = "Crear nuevo catálogo", description = "Añade una sub-categoría madre a la plataforma logística general.")
+    @Operation(
+            summary = "Crear nuevo catálogo",
+            description = "Añade una sub-categoría madre a la plataforma logística general."
+    )
     // @Valid: Activa las validaciones definidas en el DTO (ej: @NotBlank, @Min)
     // ANTES de entrar al método.
     // ResponseEntity<T>: Es la forma profesional de devolver datos en Spring,
@@ -91,7 +111,10 @@ public class VehicleController {
     // Endpoint: PUT /vehiculos/tipos-vehiculo/{id}
     @PutMapping("/tipos-vehiculo/{id}")
     @PreAuthorize("hasRole('ADMIN')") // RBAC: Solo administradores pueden modificar especificaciones técnicas.
-    @Operation(summary = "Actualizar capacidades del catálogo", description = "Modifica atributos dimensionales propagando indirectamente el sentido hacia sus activos heredados.")
+    @Operation(
+            summary = "Actualizar capacidades del catálogo",
+            description = "Modifica atributos dimensionales propagando indirectamente el sentido hacia sus activos heredados."
+    )
     // @PathVariable: Extrae el '{id}' de la URL (ej: /vehiculos/tipos-vehiculo/5).
     // @RequestBody: Convierte el JSON recibido en un objeto de Java.
     public ResponseEntity<TipoVehiculoResponse> updateTipoVehiculo(@PathVariable Long id,
@@ -103,7 +126,10 @@ public class VehicleController {
     // Endpoint: DELETE /vehiculos/tipos-vehiculo/{id}
     @DeleteMapping("/tipos-vehiculo/{id}")
     @PreAuthorize("hasRole('ADMIN')") // RBAC: Acción destructiva reservada a perfiles gerenciales.
-    @Operation(summary = "Suprimir línea de catálogo", description = "Gatilla un protocolo de validación cruzada prohibiendo el borrado de categorías con vehículos vinculados.")
+    @Operation(
+            summary = "Suprimir línea de catálogo",
+            description = "Gatilla un protocolo de validación cruzada prohibiendo el borrado de categorías con vehículos vinculados."
+    )
     public ResponseEntity<Void> deleteTipoVehiculo(@PathVariable Long id) {
         // REGLA DE NEGOCIO EN ACCIÓN: El servicio tipoVehiculoService.delete() lanzará
         // un error interno
@@ -128,7 +154,10 @@ public class VehicleController {
     // Se permite el acceso a usuarios estándar, operadores de patio y
     // administradores.
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    @Operation(summary = "Listar catálogo", description = "Extrae las tipologías funcionales del sistema (ej. Furgón, Camioneta) de forma paginada para menús desplegables.")
+    @Operation(
+            summary = "Listar catálogo",
+            description = "Extrae las tipologías funcionales del sistema (ej. Furgón, Camioneta) de forma paginada para menús desplegables."
+    )
     // Pageable de Spring Boot intercepta automáticamente los parámetros de la URL
     // (?page=0&size=10&sort=nombreTipo).
     public ResponseEntity<Page<TipoVehiculoResponse>> findAllTiposVehiculo(Pageable pageable) {
@@ -139,7 +168,10 @@ public class VehicleController {
     // Endpoint: GET /vehiculos/tipos-vehiculo/{id}
     @GetMapping("/tipos-vehiculo/{id}")
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    @Operation(summary = "Consultar tipología específica", description = "Devuelve los detalles técnicos (capacidad de carga, descripción) asociados a una categoría específica.")
+    @Operation(
+            summary = "Consultar tipología específica",
+            description = "Devuelve los detalles técnicos (capacidad de carga, descripción) asociados a una categoría específica."
+    )
     // @PathVariable: Vincula la variable 'id' en la URL (ej: /tipos-vehiculo/3) al
     // parámetro de la función.
     public ResponseEntity<TipoVehiculoResponse> findTipoVehiculoById(@PathVariable Long id) {
@@ -159,7 +191,11 @@ public class VehicleController {
     // catálogo ("tipo").
     @GetMapping("/disponibles/tipo/nombre/{nombreTipo}")
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
-    @Operation(summary = "Buscar vehículos disponibles filtrados por categoría", description = "Busca vehículos físicos listos para operar mediante coincidencia flexible de texto (ej. 'furgon'). Retorna resultados paginados.")
+    @Operation(
+            summary = "Buscar vehículos disponibles filtrados por categoría",
+            description = "Busca vehículos físicos listos para operar mediante coincidencia flexible de texto "
+                    + "(ej. 'furgon'). Retorna resultados paginados."
+    )
     public ResponseEntity<Page<VehicleResponse>> getDisponiblesByNombreTipo(
             @PathVariable String nombreTipo,
             Pageable pageable) {
@@ -189,7 +225,10 @@ public class VehicleController {
     // la API.
     // summary: Define un título corto para la acción. description: Detalla el
     // comportamiento técnico y de negocio.
-    @Operation(summary = "Registrar un vehículo", description = "Crea un nuevo vehículo en la flota tras validar reglas de unicidad documental. Requiere rol ADMIN.")
+    @Operation(
+            summary = "Registrar un vehículo",
+            description = "Crea un nuevo vehículo en la flota tras validar reglas de unicidad documental. Requiere rol ADMIN."
+    )
     // public: Modificador de acceso para que Spring Web pueda invocar el método de
     // forma remota.
     // ResponseEntity<VehicleResponse>: Envoltura profesional que controla el cuerpo
@@ -226,7 +265,10 @@ public class VehicleController {
     @PreAuthorize("hasRole('ADMIN')")
     // @Operation: Agrega metadatos para la consola de Swagger, explicando los
     // límites operativos de la actualización.
-    @Operation(summary = "Actualizar ficha de vehículo", description = "Reemplaza los datos operacionales de un vehículo. Impide cambiar la placa si existen compromisos activos.")
+    @Operation(
+            summary = "Actualizar ficha de vehículo",
+            description = "Reemplaza los datos operacionales de un vehículo. Impide cambiar la placa si existen compromisos activos."
+    )
     // @PathVariable UUID id: Extrae el identificador único de tipo UUID
     // directamente de la URL (ej: /vehiculos/a1b2c3d4-...) y lo asigna a la
     // variable.
@@ -254,7 +296,10 @@ public class VehicleController {
     @PreAuthorize("hasRole('ADMIN')")
     // @Operation: Documenta el endpoint en Swagger detallando que busca mitigar
     // colisiones o duplicidades accidentales de datos.
-    @Operation(summary = "Actualizar ficha de vehículo por placa", description = "Reemplaza los datos operacionales de un vehículo buscando por su placa. Impide colisiones de datos.")
+    @Operation(
+            summary = "Actualizar ficha de vehículo por placa",
+            description = "Reemplaza los datos operacionales de un vehículo buscando por su placa. Impide colisiones de datos."
+    )
     // @PathVariable String placa: Captura la cadena de texto de la placa desde la
     // URL (ej: /vehiculos/placa/XYZ123).
     public ResponseEntity<VehicleResponse> updateByPlaca(
@@ -277,7 +322,10 @@ public class VehicleController {
     @PreAuthorize("hasRole('ADMIN')")
     // @Operation: Registra formalmente en Swagger que este proceso no destruye
     // información física, sino que gatilla un borrado lógico.
-    @Operation(summary = "Baja lógica de vehículo (Soft-Delete)", description = "Oculta un vehículo de la operación diaria conservando su histórico. Protegido por integridad de reservas.")
+    @Operation(
+            summary = "Baja lógica de vehículo (Soft-Delete)",
+            description = "Oculta un vehículo de la operación diaria conservando su histórico. Protegido por integridad de reservas."
+    )
     // ResponseEntity<Void>: Retorna una respuesta HTTP sin cuerpo en el JSON, ya
     // que la acción de borrado no requiere devolver datos.
     public ResponseEntity<Void> softDelete(@PathVariable UUID id) {
@@ -305,7 +353,10 @@ public class VehicleController {
     @PreAuthorize("hasRole('ADMIN')")
     // @Operation: Notifica en Swagger la restricción crítica de negocio: el activo
     // debe estar estrictamente libre o disponible para ser apagado.
-    @Operation(summary = "Borrado lógico por placa", description = "Inactiva un vehículo buscando por su placa. Solo permitido si el vehículo está DISPONIBLE.")
+    @Operation(
+            summary = "Borrado lógico por placa",
+            description = "Inactiva un vehículo buscando por su placa. Solo permitido si el vehículo está DISPONIBLE."
+    )
     public ResponseEntity<Void> deleteByPlaca(@PathVariable String placa) {
 
         // Transmite la orden de apagado lógico directo a la capa lógica empresarial.
@@ -336,7 +387,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Documenta el contrato de la API en Swagger para los
     // desarrolladores cliente (Frontend/Mobile).
-    @Operation(summary = "Listar todos los vehículos", description = "Retorna una lista paginada del catálogo completo de vehículos activos.")
+    @Operation(
+            summary = "Listar todos los vehículos",
+            description = "Retorna una lista paginada del catálogo completo de vehículos activos."
+    )
     // ResponseEntity<Page<VehicleResponse>>: Envuelve la respuesta en una
     // estructura HTTP que soporta metadatos de paginación.
     // Pageable pageable: Spring Boot captura automáticamente los Query Params de la
@@ -359,7 +413,10 @@ public class VehicleController {
     @PreAuthorize("hasRole('ADMIN')")
     // @Operation: Detalla en la documentación interactiva que este endpoint expone
     // el registro de borrados lógicos.
-    @Operation(summary = "Listar vehículos inactivos", description = "Muestra un listado paginado de los vehículos que han sido dados de baja (Soft Delete).")
+    @Operation(
+            summary = "Listar vehículos inactivos",
+            description = "Muestra un listado paginado de los vehículos que han sido dados de baja (Soft Delete)."
+    )
     // @RequestParam: Extrae variables explícitas de la URL. Si el cliente no las
     // envía, asume los valores por defecto (Página 0, Tamaño 10).
     public ResponseEntity<Page<VehicleResponse>> listarInactivos(
@@ -383,7 +440,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Clarifica que este endpoint devuelve la "ficha técnica" o detalle
     // en profundidad de un solo automotor.
-    @Operation(summary = "Consultar vehículo por ID", description = "Obtiene la ficha técnica completa de un vehículo mediante su identificador interno (UUID).")
+    @Operation(
+            summary = "Consultar vehículo por ID",
+            description = "Obtiene la ficha técnica completa de un vehículo mediante su identificador interno (UUID)."
+    )
     // @PathVariable UUID id: Transforma dinámicamente el segmento de la ruta en un
     // objeto UUID de Java de forma segura.
     public ResponseEntity<VehicleResponse> findById(@PathVariable UUID id) {
@@ -402,7 +462,10 @@ public class VehicleController {
     // en porterías o terminales de despacho.
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Anuncia en Swagger la disponibilidad de esta consulta acelerada.
-    @Operation(summary = "Consultar vehículo por placa", description = "Localiza rápidamente la información de un vehículo usando su número de placa.")
+    @Operation(
+            summary = "Consultar vehículo por placa",
+            description = "Localiza rápidamente la información de un vehículo usando su número de placa."
+    )
     // @PathVariable String placa: Captura el parámetro alfanumérico (ej:
     // /vehiculos/placa/XYZ-789).
     public ResponseEntity<VehicleResponse> findByPlaca(@PathVariable String placa) {
@@ -426,7 +489,10 @@ public class VehicleController {
     @PreAuthorize("hasRole('ADMIN')")
     // @Operation: Documenta el efecto colateral de seguridad: el vehículo no vuelve
     // a estar DISPONIBLE, sino que pasa a FUERA_DE_SERVICIO.
-    @Operation(summary = "Reincorporar vehículo a la flota", description = "Levanta un vehículo del archivo histórico. Obliga una transición hacia FUERA_DE_SERVICIO para forzar revisión mecánica.")
+    @Operation(
+            summary = "Reincorporar vehículo a la flota",
+            description = "Levanta un vehículo del archivo histórico. Obliga una transición hacia FUERA_DE_SERVICIO para forzar revisión mecánica."
+    )
     // @RequestParam String motivo: Obliga al cliente a enviar un motivo
     // justificante en la URL (?motivo=...) para la auditoría forense.
     public ResponseEntity<VehicleResponse> reactivar(@PathVariable UUID id, @RequestParam String motivo) {
@@ -445,7 +511,10 @@ public class VehicleController {
     @PreAuthorize("hasRole('ADMIN')")
     // @Operation: Explica en la documentación que este endpoint facilita la
     // logística inversa para administradores en campo.
-    @Operation(summary = "Reactivar vehículo inactivo por placa", description = "Vuelve a poner operativo un vehículo exigiendo un motivo. Pasa a FUERA_DE_SERVICIO para revisión.")
+    @Operation(
+            summary = "Reactivar vehículo inactivo por placa",
+            description = "Vuelve a poner operativo un vehículo exigiendo un motivo. Pasa a FUERA_DE_SERVICIO para revisión."
+    )
     public ResponseEntity<VehicleResponse> reactivateByPlaca(
             @PathVariable String placa,
             @RequestParam String motivo) {
@@ -475,7 +544,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: Documenta en Swagger que este endpoint no es una simple
     // actualización, sino un motor de reglas (FSM).
-    @Operation(summary = "Transición de estado operativo", description = "Ejecuta una mutación parcial validando las fronteras permitidas por la Máquina de Estados Finita (FSM).")
+    @Operation(
+            summary = "Transición de estado operativo",
+            description = "Ejecuta una mutación parcial validando las fronteras permitidas por la Máquina de Estados Finita (FSM)."
+    )
     // ResponseEntity<VehicleResponse>: Retorna la versión actualizada del recurso.
     // @PathVariable UUID id: Atrapa el ID interno de la URL.
     // @Valid @RequestBody EstadoCambioRequest request: Valida que el JSON traiga
@@ -512,7 +584,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: Detalla en la documentación técnica el propósito de esta ruta por
     // llave natural (placa).
-    @Operation(summary = "Transición de estado por placa", description = "Igual a la transición por ID, pero apuntando directamente a la placa del vehículo.")
+    @Operation(
+            summary = "Transición de estado por placa",
+            description = "Igual a la transición por ID, pero apuntando directamente a la placa del vehículo."
+    )
     // @PathVariable String placa: Extrae la identificación alfanumérica del
     // automotor desde la URL.
     public ResponseEntity<VehicleResponse> updateEstadoByPlaca(@PathVariable String placa,
@@ -551,7 +626,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Agrega metadatos para la especificación OpenAPI (Swagger),
     // describiendo el propósito de este reporte global.
-    @Operation(summary = "Auditoría global de flota", description = "Obtiene la bitácora completa y paginada de todos los cambios de estado operativos en el sistema.")
+    @Operation(
+            summary = "Auditoría global de flota",
+            description = "Obtiene la bitácora completa y paginada de todos los cambios de estado operativos en el sistema."
+    )
     // public: Permite la exposición pública del método dentro del contexto web de
     // Spring.
     // ResponseEntity<Page<HistorialEstadoResponse>>: Envuelve el resultado paginado
@@ -577,7 +655,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Documenta el carácter estricto y seguro de la ruta en la consola
     // interactiva de Swagger.
-    @Operation(summary = "Trazabilidad de un vehículo específico", description = "Extrae el log inmutable (Append-Only) con el ciclo de vida operativo del activo.")
+    @Operation(
+            summary = "Trazabilidad de un vehículo específico",
+            description = "Extrae el log inmutable (Append-Only) con el ciclo de vida operativo del activo."
+    )
     // @PathVariable UUID id: Resuelve el segmento dinámico '{id}' de la URL y lo
     // convierte en un objeto UUID inmutable en Java.
     public ResponseEntity<Page<HistorialEstadoResponse>> getHistorial(@PathVariable UUID id, Pageable pageable) {
@@ -600,7 +681,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Detalla el comportamiento táctico del endpoint para mitigar la
     // necesidad de conocer identificadores técnicos (UUIDs).
-    @Operation(summary = "Trazabilidad mediante número de placa", description = "Alternativa táctica para auditar la historia de un vehículo sin conocer su UUID.")
+    @Operation(
+            summary = "Trazabilidad mediante número de placa",
+            description = "Alternativa táctica para auditar la historia de un vehículo sin conocer su UUID."
+    )
     // @PathVariable String placa: Captura la secuencia de caracteres alfanuméricos
     // de la placa directamente desde la URL.
     public ResponseEntity<Page<HistorialEstadoResponse>> getHistorialByPlaca(@PathVariable String placa,
@@ -631,7 +715,11 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Documenta en Swagger el propósito de optimización de rendimiento
     // de este endpoint en particular.
-    @Operation(summary = "Evaluación de aptitud operativa", description = "Devuelve un DTO ultraligero que permite a otros sistemas saber inmediatamente si un activo está en condiciones de ser bloqueado.")
+    @Operation(
+            summary = "Evaluación de aptitud operativa",
+            description = "Devuelve un DTO ultraligero que permite a otros sistemas saber inmediatamente "
+                    + "si un activo está en condiciones de ser bloqueado."
+    )
     // public: Permite la exposición del método en el ecosistema web de Spring.
     // ResponseEntity<DisponibilidadResponse>: Envuelve un DTO optimizado (Java
     // Record) que reduce drásticamente el tamaño del JSON de respuesta.
@@ -654,7 +742,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Registra en la consola de OpenAPI que el endpoint evalúa la
     // aptitud del camión basándose en políticas de negocio vigentes.
-    @Operation(summary = "Evaluación de aptitud por placa", description = "Permite inspeccionar la salud operativa del vehículo cruzando su placa contra las políticas de negocio.")
+    @Operation(
+            summary = "Evaluación de aptitud por placa",
+            description = "Permite inspeccionar la salud operativa del vehículo cruzando su placa contra las políticas de negocio."
+    )
     // @PathVariable String placa: Extrae el texto de la placa directamente del
     // segmento dinámico de la URL.
     public ResponseEntity<DisponibilidadResponse> getDisponibilidadByPlaca(@PathVariable String placa) {
@@ -676,7 +767,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Detalla en Swagger que esta ruta sirve como fuente de datos para
     // el tablero de vehículos ociosos.
-    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
+    @Operation(
+            summary = "Inventario de línea activa",
+            description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso."
+    )
     // Pageable pageable: Inyecta los controles de paginación y ordenación de Spring
     // Data (?page=0&size=10) desde la petición web.
     public ResponseEntity<Page<VehicleResponse>> findDisponibles(Pageable pageable) {
@@ -692,7 +786,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Mapea la documentación interactiva (Nota: Aunque la descripción
     // original se repitió, este endpoint expone activos bloqueados por viajes).
-    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
+    @Operation(
+            summary = "Inventario de línea activa",
+            description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso."
+    )
     public ResponseEntity<Page<VehicleResponse>> findReservados(Pageable pageable) {
 
         // Solicita al servicio la lista paginada de vehículos en estado 'RESERVADO' y
@@ -706,7 +803,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Provee metadatos en Swagger útiles para que el equipo de taller y
     // mantenimiento consuma este listado.
-    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
+    @Operation(
+            summary = "Inventario de línea activa",
+            description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso."
+    )
     public ResponseEntity<Page<VehicleResponse>> findMantenimiento(Pageable pageable) {
 
         // Retorna un HTTP 200 (OK) con la porción pagitada de camiones en estado
@@ -720,7 +820,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Documenta en el contrato OpenAPI la ruta destinada a la revisión
     // de pérdidas operacionales o bajas provisionales.
-    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
+    @Operation(
+            summary = "Inventario de línea activa",
+            description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso."
+    )
     public ResponseEntity<Page<VehicleResponse>> findFueraServicio(Pageable pageable) {
 
         // Ejecuta la consulta optimizada y devuelve un HTTP 200 (OK) con los activos
@@ -755,7 +858,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: Documenta que este es el primer paso de una transacción
     // distribuida.
-    @Operation(summary = "Comando Saga: Solicitar Bloqueo", description = "Fase 1: Crea un registro PENDIENTE sobre el activo, protegiendo las fronteras operativas ante solapamientos.")
+    @Operation(
+            summary = "Comando Saga: Solicitar Bloqueo",
+            description = "Fase 1: Crea un registro PENDIENTE sobre el activo, protegiendo las fronteras operativas ante solapamientos."
+    )
     public ResponseEntity<ReservaResponse> iniciarReserva(@PathVariable UUID id,
             @Valid @RequestBody ReservaRequest request) {
 
@@ -774,7 +880,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: Documenta que facilita la integración con sistemas satélite (ej.
     // lectores de patio).
-    @Operation(summary = "Comando Saga: Solicitar Bloqueo mediante placa", description = "Atajo logístico (HU11) para bloquear temporalmente el vehículo desde sistemas satélite de bodega.")
+    @Operation(
+            summary = "Comando Saga: Solicitar Bloqueo mediante placa",
+            description = "Atajo logístico (HU11) para bloquear temporalmente el vehículo desde sistemas satélite de bodega."
+    )
     public ResponseEntity<ReservaResponse> iniciarReservaByPlaca(@PathVariable String placa,
             @Valid @RequestBody ReservaRequest request) {
 
@@ -793,7 +902,10 @@ public class VehicleController {
     // @PreAuthorize: Lectura abierta para todo el personal autorizado.
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Define este endpoint como el monitor de la transacción.
-    @Operation(summary = "Consultar estado del expediente", description = "Permite inspeccionar la bitácora viva de la Saga de reserva.")
+    @Operation(
+            summary = "Consultar estado del expediente",
+            description = "Permite inspeccionar la bitácora viva de la Saga de reserva."
+    )
     public ResponseEntity<ReservaResponse> obtenerReserva(@PathVariable UUID reservaId) {
 
         // PATRÓN FUNCIONAL: Programación Declarativa con Optionals.
@@ -814,7 +926,10 @@ public class VehicleController {
     // Paso 2 (FINAL) de la SAGA: Asentar permanentemente la reserva.
     @PostMapping("/reservas/{reservaId}/confirmar")
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
-    @Operation(summary = "Comando Saga: Consolidación (Commit)", description = "Fase Final: Asienta definitivamente la reserva si la ventana operativa de tiempo es legal.")
+    @Operation(
+            summary = "Comando Saga: Consolidación (Commit)",
+            description = "Fase Final: Asienta definitivamente la reserva si la ventana operativa de tiempo es legal."
+    )
     // Retorna un Map<String, Object> para construir un JSON dinámico y altamente
     // personalizado.
     public ResponseEntity<Map<String, Object>> confirmarReserva(@PathVariable UUID reservaId) {
@@ -851,7 +966,10 @@ public class VehicleController {
    // Endpoint para confirmar todas las reservas pendientes de una placa de golpe
     @PostMapping("/placa/{numeroPlaca}/reservas/confirmar")
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
-    @Operation(summary = "Comando Masivo: Consolidación por Placa", description = "Confirma de una sola vez todas las reservas que se encuentren PENDIENTES para un vehículo específico.")
+    @Operation(
+            summary = "Comando Masivo: Consolidación por Placa",
+            description = "Confirma de una sola vez todas las reservas que se encuentren PENDIENTES para un vehículo específico."
+    )
     public ResponseEntity<Map<String, Object>> confirmarReservaPorPlaca(@PathVariable String numeroPlaca) {
 
         // Llamamos al servicio. Nos devuelve la lista de DTOs ya armada.
@@ -859,7 +977,9 @@ public class VehicleController {
 
         // Armamos un JSON dinámico para mayor claridad en el Frontend
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("message", "Se confirmaron exitosamente " + reservasConfirmadas.size() + " reserva(s) para el vehículo " + numeroPlaca.toUpperCase());
+        response.put("message",
+                "Se confirmaron exitosamente " + reservasConfirmadas.size()
+                        + " reserva(s) para el vehículo " + numeroPlaca.toUpperCase());
         response.put("placa", numeroPlaca.toUpperCase());
         response.put("timestamp", LocalDateTime.now().toString());
         
@@ -871,7 +991,10 @@ public class VehicleController {
 
     @PutMapping("/reservas/{idReserva}/fechas")
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
-    @Operation(summary = "Actualizar fechas de una reserva", description = "Modifica el rango de tiempo de una reserva validando colisiones a través del servicio orquestador de Sagas.")
+    @Operation(
+            summary = "Actualizar fechas de una reserva",
+            description = "Modifica el rango de tiempo de una reserva validando colisiones a través del servicio orquestador de Sagas."
+    )
     public ResponseEntity<ReservaResponse> actualizarFechasReserva(
             @PathVariable UUID idReserva,
             @Valid @RequestBody UpdateReservaDatesRequest request) {
@@ -893,7 +1016,10 @@ public class VehicleController {
     // @PreAuthorize: Restricción crítica. Solo un ADMIN (o el sistema automatizado)
     // debería poder cancelar flujos en progreso.
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Comando Saga: Anulación (Rollback)", description = "Fase Alterna: Destruye el compromiso de reserva liberando nuevamente el activo si la orquestación fracasa.")
+    @Operation(
+            summary = "Comando Saga: Anulación (Rollback)",
+            description = "Fase Alterna: Destruye el compromiso de reserva liberando nuevamente el activo si la orquestación fracasa."
+    )
     // @RequestParam String motivo: Obliga a dejar una evidencia técnica del porqué
     // falló la transacción.
     public ResponseEntity<String> compensarReserva(@PathVariable UUID reservaId, @RequestParam String motivo) {
@@ -920,7 +1046,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Documenta en Swagger que este es el reporte maestro y absoluto de
     // todas las transacciones.
-    @Operation(summary = "Listar todas las reservas", description = "Obtiene el historial global paginado de todas las reservas del sistema, ordenadas de la más reciente a la más antigua.")
+    @Operation(
+            summary = "Listar todas las reservas",
+            description = "Obtiene el historial global paginado de todas las reservas del sistema, ordenadas de la más reciente a la más antigua."
+    )
     // ResponseEntity<Page<...>>: Envuelve los resultados en un objeto de paginación
     // para evitar desbordamientos de memoria RAM.
     // Pageable pageable: Spring Boot extrae automáticamente los parámetros de
@@ -942,7 +1071,11 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: Documenta que aquí residen las reservas en el "Paso 1" del Patrón
     // SAGA.
-    @Operation(summary = "Listar reservas pendientes", description = "Obtiene la bandeja de entrada de reservas en estado PENDIENTE esperando confirmación, ordenadas de la más reciente a la más antigua.")
+    @Operation(
+            summary = "Listar reservas pendientes",
+            description = "Obtiene la bandeja de entrada de reservas en estado PENDIENTE esperando confirmación, "
+                    + "ordenadas de la más reciente a la más antigua."
+    )
     public ResponseEntity<Page<ReservaResponse>> getReservasPendientes(Pageable pageable) {
 
         // Delega la consulta al servicio para buscar estrictamente el estado PENDIENTE.
@@ -958,7 +1091,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: (Texto corregido) Se ajustó para reflejar que lista reservas
     // exitosas, no pendientes.
-    @Operation(summary = "Listar reservas confirmadas", description = "Obtiene el historial de reservas en estado CONFIRMADA que concluyeron la orquestación exitosamente.")
+    @Operation(
+            summary = "Listar reservas confirmadas",
+            description = "Obtiene el historial de reservas en estado CONFIRMADA que concluyeron la orquestación exitosamente."
+    )
     public ResponseEntity<Page<ReservaResponse>> getReservasConfirmadas(Pageable pageable) {
 
         // Delega la consulta al servicio filtrando por estado CONFIRMADA y retorna HTTP
@@ -973,7 +1109,11 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: (Texto corregido) Aclara que esta es una bandeja de diagnóstico
     // para sistemas caídos.
-    @Operation(summary = "Listar reservas fallidas", description = "Obtiene el registro de auditoría de reservas en estado FALLIDA debido a errores técnicos o caídas de microservicios externos.")
+    @Operation(
+            summary = "Listar reservas fallidas",
+            description = "Obtiene el registro de auditoría de reservas en estado FALLIDA debido a errores técnicos "
+                    + "o caídas de microservicios externos."
+    )
     public ResponseEntity<Page<ReservaResponse>> getReservasFallidas(Pageable pageable) {
 
         // Ejecuta la consulta de diagnóstico y retorna la colección de transacciones
@@ -988,7 +1128,11 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: (Texto corregido) Documenta que expone recursos liberados tras un
     // Rollback (ej. cliente canceló o pago rechazado).
-    @Operation(summary = "Listar reservas canceladas", description = "Obtiene la bandeja de entrada de reservas en estado CANCELADA (Compensadas/Rollback) ordenadas de la más reciente a la más antigua.")
+    @Operation(
+            summary = "Listar reservas canceladas",
+            description = "Obtiene la bandeja de entrada de reservas en estado CANCELADA (Compensadas/Rollback) "
+                    + "ordenadas de la más reciente a la más antigua."
+    )
     public ResponseEntity<Page<ReservaResponse>> getReservasCanceladas(Pageable pageable) {
 
         // Delega al servicio la recuperación de los históricos de reversión y retorna
@@ -1006,7 +1150,11 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Documenta en Swagger este endpoint de conveniencia, ideal para
     // consultas rápidas en terminales logísticas o aplicaciones móviles.
-    @Operation(summary = "Listar reservas por placa", description = "Obtiene el historial paginado de todas las reservas asociadas a un vehículo mediante su placa, ordenadas de la más reciente a la más antigua.")
+    @Operation(
+            summary = "Listar reservas por placa",
+            description = "Obtiene el historial paginado de todas las reservas asociadas a un vehículo mediante su placa, "
+                    + "ordenadas de la más reciente a la más antigua."
+    )
     // public ResponseEntity<Page<...>>: Expone el método a la red. Retorna una
     // respuesta HTTP que envuelve una "Página" (Page) de resultados, protegiendo la
     // memoria del servidor.
@@ -1035,7 +1183,11 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('USUARIO_AUTORIZADO', 'OPERADOR', 'ADMIN')")
     // @Operation: Documenta en la interfaz interactiva la capacidad de filtrar con
     // precisión quirúrgica el estado de la reserva para un activo específico.
-    @Operation(summary = "Listar reservas por placa y estado", description = "Obtiene el historial paginado de reservas de un vehículo (por su placa), filtrado exclusivamente por un estado (PENDIENTE, CONFIRMADA, FALLIDA o CANCELADA).")
+    @Operation(
+            summary = "Listar reservas por placa y estado",
+            description = "Obtiene el historial paginado de reservas de un vehículo (por su placa), "
+                    + "filtrado exclusivamente por un estado (PENDIENTE, CONFIRMADA, FALLIDA o CANCELADA)."
+    )
     // Retorna una página de resultados óptima para alimentar interfaces de usuario
     // complejas (como la pestaña de "Viajes Exitosos" en el perfil de un camión).
     public ResponseEntity<Page<ReservaResponse>> getReservasByPlacaAndEstado(
@@ -1068,7 +1220,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: Documenta en Swagger el punto de entrada principal del monitor de
     // transacciones.
-    @Operation(summary = "Listar todas las Sagas", description = "Obtiene el historial global paginado de todas las transacciones distribuidas (Sagas).")
+    @Operation(
+            summary = "Listar todas las Sagas",
+            description = "Obtiene el historial global paginado de todas las transacciones distribuidas (Sagas)."
+    )
     // Inyecta el objeto Pageable para manejar volúmenes masivos de datos
     // (LIMIT/OFFSET).
     public ResponseEntity<Page<SagaResponse>> getAllSagas(Pageable pageable) {
@@ -1084,7 +1239,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation (Agregado): Documenta la bandeja de Sagas que acaban de iniciar su
     // orquestación.
-    @Operation(summary = "Listar Sagas iniciadas", description = "Obtiene las transacciones distribuidas que acaban de comenzar (Paso 1) y esperan propagación en la red.")
+    @Operation(
+            summary = "Listar Sagas iniciadas",
+            description = "Obtiene las transacciones distribuidas que acaban de comenzar (Paso 1) y esperan propagación en la red."
+    )
     public ResponseEntity<Page<SagaResponse>> getSagasIniciadas(Pageable pageable) {
 
         // Ejecuta la consulta filtrando por el estado INICIADA y retorna HTTP 200 (OK).
@@ -1097,7 +1255,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation (Agregado): Expone las Sagas que están en plena comunicación con
     // sistemas externos (ej. Pasarela de pagos).
-    @Operation(summary = "Listar Sagas en progreso", description = "Obtiene transacciones que actualmente están procesando respuestas asíncronas de otros microservicios.")
+    @Operation(
+            summary = "Listar Sagas en progreso",
+            description = "Obtiene transacciones que actualmente están procesando respuestas asíncronas de otros microservicios."
+    )
     public ResponseEntity<Page<SagaResponse>> getSagasEnProgreso(Pageable pageable) {
 
         // Retorna HTTP 200 (OK) con las transacciones que están literalmente "volando"
@@ -1111,7 +1272,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation (Agregado): Documenta la bandeja de transacciones con "Commit"
     // global exitoso.
-    @Operation(summary = "Listar Sagas completadas", description = "Obtiene las transacciones donde todos los microservicios involucrados respondieron con éxito absoluto.")
+    @Operation(
+            summary = "Listar Sagas completadas",
+            description = "Obtiene las transacciones donde todos los microservicios involucrados respondieron con éxito absoluto."
+    )
     public ResponseEntity<Page<SagaResponse>> getSagasCompletadas(Pageable pageable) {
 
         // Retorna HTTP 200 (OK) con el historial de triunfos del orquestador.
@@ -1124,7 +1288,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation (Agregado): Alerta visual para los ingenieros sobre flujos que se
     // rompieron irrecuperablemente.
-    @Operation(summary = "Listar Sagas fallidas", description = "Monitor de diagnóstico para transacciones distribuidas que colapsaron y requieren atención humana o reintentos.")
+    @Operation(
+            summary = "Listar Sagas fallidas",
+            description = "Monitor de diagnóstico para transacciones distribuidas que colapsaron y requieren atención humana o reintentos."
+    )
     public ResponseEntity<Page<SagaResponse>> getSagasFallidas(Pageable pageable) {
 
         // Retorna HTTP 200 (OK) con la lista paginada de fallos de red o de lógica de
@@ -1138,7 +1305,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation (Agregado): Documenta que el sistema funcionó bien al echar hacia
     // atrás algo que había fallado.
-    @Operation(summary = "Listar Sagas compensadas", description = "Obtiene transacciones que fallaron pero fueron exitosamente revertidas (Rollback distribuido), liberando los recursos.")
+    @Operation(
+            summary = "Listar Sagas compensadas",
+            description = "Obtiene transacciones que fallaron pero fueron exitosamente revertidas (Rollback distribuido), liberando los recursos."
+    )
     public ResponseEntity<Page<SagaResponse>> getSagasCompensadas(Pageable pageable) {
 
         // Retorna HTTP 200 (OK) demostrando que el patrón Saga previno bloqueos
@@ -1152,7 +1322,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: Detalla que esto permite buscar qué le pasó a nivel de red a un
     // vehículo en específico.
-    @Operation(summary = "Listar sagas por placa", description = "Obtiene los trámites de Saga de un vehículo específico mediante su placa.")
+    @Operation(
+            summary = "Listar sagas por placa",
+            description = "Obtiene los trámites de Saga de un vehículo específico mediante su placa."
+    )
     public ResponseEntity<Page<SagaResponse>> getSagasByPlaca(
             // Extrae la placa dinámica desde la URL.
             @PathVariable String numeroPlaca,
@@ -1170,7 +1343,10 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMIN')")
     // @Operation: Documenta este endpoint avanzado capaz de responder preguntas
     // como: "¿Este camión tiene transacciones colgadas (EN_PROGRESO)?"
-    @Operation(summary = "Listar sagas por placa y estado", description = "Filtra las Sagas de una placa por un estado exacto de red (INICIADA, EN_PROGRESO, COMPLETADA, FALLIDA, COMPENSADA).")
+    @Operation(
+            summary = "Listar sagas por placa y estado",
+            description = "Filtra las Sagas de una placa por un estado exacto de red (INICIADA, EN_PROGRESO, COMPLETADA, FALLIDA, COMPENSADA)."
+    )
     public ResponseEntity<Page<SagaResponse>> getSagasByPlacaAndEstado(
             // Captura la llave natural (placa) en formato de texto.
             @PathVariable String numeroPlaca,
