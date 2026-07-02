@@ -11,8 +11,11 @@ name: CI - FleetOps Vehicles
 #   5. Compilar
 #   6. Ejecutar tests (con PostgreSQL real como service container)
 #   7. Generar reporte de cobertura JaCoCo
-#   8. Analisis de SonarCloud (PREPARADO pero INACTIVO -- se omite
-#      automaticamente mientras no exista el Secret SONAR_TOKEN)
+#   8. Analisis de SonarCloud -- TEMPORALMENTE DESHABILITADO (comentado, no
+#      eliminado). La organizacion FleetOps-Corp usa "Automatic Analysis" de
+#      SonarCloud (via GitHub App) y bloquea el modo "CI-based Analysis" que
+#      este pipeline necesitaria. Ver comentario detallado junto a los steps
+#      comentados, mas abajo, para saber como reactivarlo.
 #   9. Ejecutar Checkstyle
 #  10. Empaquetar el proyecto (jar ejecutable)
 #  11. Subir el jar como Artifact de GitHub Actions
@@ -120,50 +123,55 @@ jobs:
       - name: Generar reporte de cobertura JaCoCo
         run: ./mvnw -B jacoco:report
 
-      # Verificar si SONAR_TOKEN esta configurado (sin exponer su valor) --------
-      # El contexto "secrets" NO puede usarse directamente en condiciones "if:"
-      # de un step (solo en env/with/run). Por eso se verifica su existencia
-      # aqui, dentro de un "run:" normal, y se expone el resultado como output
-      # booleano -- "steps.*.outputs" si es un contexto valido en "if:".
-      - name: Verificar si SONAR_TOKEN esta configurado
-        id: check_sonar_token
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          if [ -n "$SONAR_TOKEN" ]; then
-            echo "token_present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "token_present=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Analisis de SonarCloud (preparado, inactivo hasta que exista SONAR_TOKEN) ---
-      # Se ejecuta UNICAMENTE si el step anterior confirmo que el Secret
-      # SONAR_TOKEN existe. Si no existe, este step aparece como "Skipped"
-      # (NO como fallo), permitiendo que el resto del pipeline continue con
-      # normalidad para los ~30 estudiantes mientras SonarCloud todavia no
-      # esta conectado.
+      # =========================================================================
+      # SONARCLOUD -- TEMPORALMENTE DESHABILITADO (no eliminado)
+      # =========================================================================
+      # Motivo: la organizacion de SonarCloud (FleetOps-Corp) esta conectada
+      # via GitHub App y el proyecto usa "Automatic Analysis". La opcion para
+      # desactivar "Automatic Analysis" y habilitar "CI-based Analysis" esta
+      # bloqueada por la configuracion de la organizacion, por lo que ejecutar
+      # el analisis desde este pipeline actualmente entra en conflicto con el
+      # analisis automatico de SonarCloud (lo rechazaria).
       #
-      # sonar.projectKey y sonar.organization se resuelven aqui mismo como
-      # variables de entorno (SONAR_PROJECT_KEY / SONAR_ORGANIZATION) para
-      # que, el dia que se cree el proyecto en SonarCloud (Fase 4), solo se
-      # necesite crear esos Secrets/Variables en GitHub -- sin volver a tocar
-      # este archivo. sonar-project.properties ya aporta el resto de la
-      # configuracion (sources, tests, rutas de reportes, encoding, etc.).
-      # sonar.host.url se pasa explicito para no depender del fallback por
-      # defecto del scanner (localhost:9000).
-      - name: Analisis de SonarCloud
-        if: steps.check_sonar_token.outputs.token_present == 'true'
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          # TODO-FASE-SONARCLOUD: crear estos dos Secrets/Variables en GitHub
-          # el dia que exista la organizacion/proyecto en SonarCloud (Fase 4).
-          SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
-          SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
-        run: >-
-          ./mvnw -B sonar:sonar
-          -Dsonar.host.url=https://sonarcloud.io
-          -Dsonar.projectKey=$SONAR_PROJECT_KEY
-          -Dsonar.organization=$SONAR_ORGANIZATION
+      # Mientras tanto, SonarCloud sigue analizando el repositorio por su
+      # cuenta (Automatic Analysis), asi que no se pierde cobertura de
+      # analisis de calidad -- solo se desactiva el disparo desde CI.
+      #
+      # Nada de esto se elimino: sonar-project.properties, el plugin
+      # sonar-maven-plugin en pom.xml y los Secrets (SONAR_TOKEN,
+      # SONAR_PROJECT_KEY, SONAR_ORGANIZATION) permanecen intactos.
+      #
+      # Para reactivar el dia que la organizacion permita CI Analysis:
+      #   1. Descomentar los dos steps de abajo ("Verificar si SONAR_TOKEN..."
+      #      y "Analisis de SonarCloud").
+      #   2. Confirmar que los Secrets SONAR_TOKEN / SONAR_PROJECT_KEY /
+      #      SONAR_ORGANIZATION siguen existiendo en el repositorio.
+      #   3. No se requiere ningun otro cambio en pom.xml ni en
+      #      sonar-project.properties.
+      # =========================================================================
+
+      # - name: Verificar si SONAR_TOKEN esta configurado
+      #   id: check_sonar_token
+      #   env:
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      #   run: |
+      #     if [ -n "$SONAR_TOKEN" ]; then
+      #       echo "token_present=true" >> "$GITHUB_OUTPUT"
+      #     else
+      #       echo "token_present=false" >> "$GITHUB_OUTPUT"
+      #     fi
+
+      # - name: Analisis de SonarCloud
+      #   if: steps.check_sonar_token.outputs.token_present == 'true'
+      #   env:
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      #     SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
+      #     SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
+      #   run: >-
+      #     ./mvnw -B sonar:sonar
+      #     -Dsonar.host.url=https://sonarcloud.io
+      #     -Dsonar.projectKey=$SONAR_PROJECT_KEY
+      #     -Dsonar.organization=$SONAR_ORGANIZATION
 
       # 9. Ejecutar Checkstyle ------------------------------------------------------
       # No falla el build todavia (failOnViolation=false en pom.xml): el
