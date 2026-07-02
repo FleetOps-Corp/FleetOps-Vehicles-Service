@@ -1,4 +1,4 @@
-name: CD - Deploy a AWS EC2 (Preparado, DESHABILITADO)
+name: CD - Deploy a AWS EC2
 
 # =============================================================================
 # Workflow de Continuous Deployment (CD) para FleetOps Vehicles.
@@ -56,7 +56,7 @@ on:
 
 jobs:
   deploy:
-    name: Deploy a EC2 (INACTIVO)
+    name: Deploy a EC2
     runs-on: ubuntu-latest
 
     # -------------------------------------------------------------------------
@@ -67,7 +67,7 @@ jobs:
     # (o eliminar la condicion por completo si se dispara solo via
     # workflow_dispatch).
     # -------------------------------------------------------------------------
-    if: false
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     # Solo tiene sentido ejecutar el deploy si el CI que lo disparo paso
     # exitosamente (aplica una vez se reactive este job).
@@ -95,10 +95,6 @@ jobs:
       #     registry: ghcr.io
       #     username: ${{ secrets.GHCR_USERNAME }}
       #     password: ${{ secrets.GHCR_TOKEN }}
-      - name: Referencia de imagen Docker a desplegar (placeholder)
-        run: |
-          echo "Imagen a desplegar (placeholder, no se usa aun): ${{ secrets.DOCKER_IMAGE }}:${{ secrets.DOCKER_TAG }}"
-
       # 3. Conexion SSH a EC2 + 4. Actualizar imagen + 5. docker compose pull +
       # 6. docker compose up -d ------------------------------------------------
       # Se ejecutan como un unico bloque remoto via SSH, reutilizando el
@@ -118,8 +114,8 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
-            docker compose pull
-            docker compose up -d
+            git pull origin main
+            docker compose up -d --build
 
       # 7. Verificacion del estado del servicio ---------------------------------
       # Confirma que el contenedor "vehicles-service" quedo healthy tras el
