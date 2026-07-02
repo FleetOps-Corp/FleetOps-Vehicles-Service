@@ -43,6 +43,9 @@ public interface VehicleRepository extends JpaRepository<Vehiculo, UUID> {
   // Búsqueda para recuperar vehículos eliminados lógicamente.
   Optional<Vehiculo> findByNumeroPlacaIgnoreCaseAndActivoFalse(String numeroPlaca);
 
+  // busca un vehiculo con la placa ignorando si esta activo o no 
+  Optional<Vehiculo> findByNumeroPlacaIgnoreCase(String numeroPlaca);
+
   // =========================================================================================
   // ESTADO Y CATEGORIZACIÓN
   // =========================================================================================

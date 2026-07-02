@@ -63,18 +63,62 @@ public class SagaServiceImpl implements SagaService {
 
     // Servicios de Dominio: Contienen la lógica de negocio pura, fuera de la base
     // de datos.
-    private final IdempotencyValidator idempotencyValidator; // Protege contra peticiones duplicadas.
-    private final AvailabilityPolicy availabilityPolicy; // Reglas de negocio (¿Se puede rentar?).
+    private final IdempotencyValidator idempotencyValidator;
+    private final AvailabilityPolicy availabilityPolicy;
 
     // ─────────────────────────────────────────────────────────────────────────────
     // MÉTODO: iniciarReserva (Vía ID)
     // ─────────────────────────────────────────────────────────────────────────────
-
     private ReservaResponse validarYProcesarReserva(Vehiculo vehiculo, ReservaRequest request) {
 
-        // 1. Validar Disponibilidad (La lógica que pediste para que no reserve si no
-        // está DISPONIBLE)
+        // =====================================================================
+        // 🚀 NUEVA REGLA: Vigencia Legal (SOAT y RTM) - VERSIÓN ESTRICTA
+        // =====================================================================
+        java.time.LocalDate hoy = java.time.LocalDate.now();
+
+        // 1. Validación de SOAT
+        if (vehiculo.getFechaSoat() == null) {
+            throw new BusinessException("No se puede iniciar la reserva. El vehículo no tiene registrado un SOAT.");
+        } else if (vehiculo.getFechaSoat().isBefore(hoy)) {
+            throw new BusinessException("No se puede iniciar la reserva. El SOAT del vehículo ya está vencido.");
+        } else if (java.time.temporal.ChronoUnit.DAYS.between(hoy, vehiculo.getFechaSoat()) <= 7) {
+            throw new BusinessException(
+                    "No se puede iniciar la reserva. El SOAT del vehículo vencerá en 7 días o menos.");
+        }
+
+        // 2. Validación de Revisión Técnico Mecánica (RTM)
+        if (vehiculo.getFechaRtm() == null) {
+            throw new BusinessException("No se puede iniciar la reserva. El vehículo no tiene registrada una RTM.");
+        } else if (vehiculo.getFechaRtm().isBefore(hoy)) {
+            throw new BusinessException(
+                    "No se puede iniciar la reserva. La Revisión Técnico Mecánica (RTM) ya está vencida.");
+        } else if (java.time.temporal.ChronoUnit.DAYS.between(hoy, vehiculo.getFechaRtm()) <= 7) {
+            throw new BusinessException(
+                    "No se puede iniciar la reserva. La Revisión Técnico Mecánica (RTM) vencerá en 7 días o menos.");
+        }
+
+        // =====================================================================
+        // 3. Validar Disponibilidad (Con mensajes dinámicos)
+        // =====================================================================
         if (vehiculo.getEstadoVehiculo() != EstadoVehiculo.DISPONIBLE) {
+
+            // 🌟 NUEVA LÓGICA: Determinamos el mensaje exacto según el estado real
+            String mensajeError = "";
+            switch (vehiculo.getEstadoVehiculo()) {
+                case RESERVADO:
+                    mensajeError = "El vehículo no está disponible. Inténtelo en los días en que no esté reservado.";
+                    break;
+                case FUERA_DE_SERVICIO:
+                    mensajeError = "El vehículo no está disponible, está fuera de servicio.";
+                    break;
+                case EN_MANTENIMIENTO:
+                    mensajeError = "El vehículo no está disponible, está en mantenimiento.";
+                    break;
+                default:
+                    break;
+            }
+
+            // Consultamos la base de datos para ver si tiene viajes programados
             List<EstadoReserva> estadosOcupados = List.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA);
             List<ReservaVehiculo> reservasActivas = reservaRepository
                     .findByVehiculo_IdVehiculoAndEstadoReservaIn(vehiculo.getIdVehiculo(), estadosOcupados);
@@ -84,12 +128,17 @@ public class SagaServiceImpl implements SagaService {
                             r.getEstadoReserva().name()))
                     .toList();
 
-            throw new ReservaConflictException(
-                    "El vehículo no está disponible. intentelo en los dias en que no este reservado.",
-                    agenda);
+            // Lanzamos la excepción inyectando el texto que calculamos en el switch
+            throw new ReservaConflictException(mensajeError, agenda);
         }
 
-        // 2. Validar Solapamiento de Fechas (La lógica original que ya tenías)
+        // Validación de identificadores externos únicos
+        UUID idAsignacion = UUID.fromString(request.idAsignacionExt());
+        if (reservaRepository.existsByIdAsignacionExt(idAsignacion)) {
+            throw new BusinessException("UUID de asignaciones duplicado, use uno diferente.");
+        }
+
+        // 4. Validar Solapamiento de Fechas
         List<ReservaVehiculo> conflictos = reservaRepository.obtenerReservasConflictivas(
                 vehiculo.getIdVehiculo(),
                 List.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA),
@@ -101,201 +150,115 @@ public class SagaServiceImpl implements SagaService {
                     .map(r -> new AgendaReservaResponse(r.getFechaInicio(), r.getFechaFin(),
                             r.getEstadoReserva().name()))
                     .toList();
-            throw new ReservaConflictException("La reserva se cruza con estas fechas", conflictosMapeados);
+            throw new ReservaConflictException("La reserva se cruza con las siguientes fechas asignadas:",
+                    conflictosMapeados);
         }
 
-        // 3. Si todo está correcto, procesamos la reserva
+        // 5. Si todo está correcto legal y operativamente, procesamos la reserva
         return procesarCreacionReserva(vehiculo, request);
     }
 
     @Override
     @Transactional
     public ReservaResponse iniciarReserva(UUID idVehiculo, ReservaRequest request) {
-        log.info("Iniciando saga de reserva para vehículo ID: {}", idVehiculo);
+        log.info("Iniciando proceso de reserva para vehículo ID: {}", idVehiculo);
         idempotencyValidator.validateNotDuplicate(request.claveIdempotencia());
 
         Vehiculo vehiculo = vehicleRepository.findById(idVehiculo)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehiculo", "id", idVehiculo));
 
-        // Llamada unificada
         return validarYProcesarReserva(vehiculo, request);
     }
 
     @Override
     @Transactional
     public ReservaResponse iniciarReservaByPlaca(String placa, ReservaRequest request) {
-        log.info("Iniciando saga de reserva para vehículo placa: {}", placa);
+        log.info("Iniciando proceso de reserva para vehículo placa: {}", placa);
         idempotencyValidator.validateNotDuplicate(request.claveIdempotencia());
 
         Vehiculo vehiculo = vehicleRepository.findByNumeroPlacaIgnoreCaseAndActivoTrue(placa)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehiculo", "placa", placa));
 
-        // Llamada unificada
         return validarYProcesarReserva(vehiculo, request);
     }
 
     // Método privado central que contiene toda la lógica de creación de la reserva.
     private ReservaResponse procesarCreacionReserva(Vehiculo vehiculo, ReservaRequest request) {
 
-        // REGLA DE NEGOCIO: "Políticas de Disponibilidad".
-        // Utiliza el servicio de dominio para verificar SOAT, RTM y estado mecánico del
-        // camión.
         if (!availabilityPolicy.isAvailableForReservation(vehiculo)) {
-            // Si el vehículo no es apto (ej: SOAT vencido), abortamos la operación lanzando
-            // una excepción de negocio.
-            throw new BusinessException("El vehículo no cumple las políticas para ser reservado.");
+            throw new BusinessException("El vehículo no cumple las políticas operativas para ser reservado.");
         }
 
-        // REGLA DE NEGOCIO: "Anti-Solapamiento de Fechas".
-        // Ejecuta una consulta a la base de datos para detectar si existe alguna otra
-        // reserva
-        // que choque con el intervalo [fechaInicio, fechaFin] solicitado.
         boolean existeSolapamiento = reservaRepository.existeReservaEnRango(
-                vehiculo.getIdVehiculo(), // ID del camión.
-                List.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA), // Solo nos importan reservas activas.
-                request.fechaFin(), // Fecha de fin solicitada.
-                request.fechaInicio()); // Fecha de inicio solicitada.
+                vehiculo.getIdVehiculo(),
+                List.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA),
+                request.fechaFin(),
+                request.fechaInicio());
 
-        // Si la consulta retorna 'true', significa que el camión está ocupado en ese
-        // periodo.
         if (existeSolapamiento) {
-            // Bloqueamos la operación para evitar el "double-booking" o sobre-reserva.
             throw new BusinessException("El vehículo ya tiene una reserva que se cruza con las fechas solicitadas.");
         }
 
         // Creación del "Expediente" de la Saga (Bitácora de transacción distribuida).
-        // Representa la "carpeta" donde documentaremos todos los pasos de este trámite.
         SagaVehiculo saga = new SagaVehiculo();
-
-        // Asociamos la carpeta al camión físico que estamos reservando.
         saga.setVehiculo(vehiculo);
-
-        // Definimos la naturaleza del trámite para el orquestador.
         saga.setTipoOperacion("RESERVA_VEHICULO");
-
-        // Estado inicial del trámite: "INICIADA".
         saga.setEstadoSaga(EstadoSaga.INICIADA);
-
-        // Guardamos la clave de idempotencia (el ticket único) para evitar
-        // procesamiento duplicado.
         saga.setClaveIdempotencia(request.claveIdempotencia());
-
-        // Guardamos el JSON original de la petición como "foto" para auditoría forense
-        // si algo falla.
         saga.setPayload(request.toString());
-
-        // Registramos el momento exacto en que nació este expediente.
         saga.setCreadoEn(LocalDateTime.now());
-
-        // Persistimos la Saga en base de datos para obtener su ID único (idSaga).
         saga = sagaRepository.save(saga);
 
-        // ====================================================================================
-        // NOTA DE ARQUITECTURA:
-        // El vehículo se mantiene en estado DISPONIBLE. El componente asíncrono
-        // (VehicleStateScheduler) se encargará de pasarlo a RESERVADO cuando el reloj
-        // del servidor alcance la fechaInicio de esta reserva.
-        // ====================================================================================
-
-        // Actualizamos el estado de la Saga a "EN_PROGRESO".
         saga.setEstadoSaga(EstadoSaga.EN_PROGRESO);
-
-        // Guardamos la actualización de la Saga.
         sagaRepository.save(saga);
 
         // Creamos el objeto Reserva, que es el contrato formal del servicio.
         ReservaVehiculo reserva = new ReservaVehiculo();
-
-        // Vinculamos la reserva al vehículo.
         reserva.setVehiculo(vehiculo);
-
-        // Vinculamos la reserva a la Saga (para saber en qué trámite está metida).
         reserva.setSagaVehiculo(saga);
-
-        // Guardamos el ID externo del sistema de Asignaciones (para correlación de
-        // servicios).
         reserva.setIdAsignacionExt(UUID.fromString(request.idAsignacionExt()));
-
-        // Iniciamos la reserva como PENDIENTE (espera confirmación de los demás
-        // servicios).
         reserva.setEstadoReserva(EstadoReserva.PENDIENTE);
-
-        // Copiamos la clave de idempotencia al recibo para consistencia.
         reserva.setClaveIdempotencia(request.claveIdempotencia());
-
-        // Guardamos el dato de quién solicitó el servicio.
         reserva.setSolicitadoPor(request.solicitadoPor());
-
-        // Guardamos la fecha de inicio del viaje.
         reserva.setFechaInicio(request.fechaInicio());
-
-        // Guardamos la fecha de fin del viaje.
         reserva.setFechaFin(request.fechaFin());
-
-        // Registramos el momento de creación del recibo.
         reserva.setCreadoEn(LocalDateTime.now());
-
-        // Persistimos el recibo final en la base de datos.
         reserva = reservaRepository.save(reserva);
 
-        // Log informativo: indicamos éxito en la fase de orquestación.
-        log.info("Saga de reserva EN_PROGRESO. Reserva creada (Vehículo aguardando tiempo de inicio). SagaID: {}",
+        log.info(
+                "Proceso de reserva EN_PROGRESO. Reserva creada (Vehículo aguardando tiempo de inicio). Trámite ID: {}",
                 saga.getIdSaga());
 
-        // Retornamos el DTO de respuesta transformado para el cliente.
         return toReservaResponse(reserva);
     }
 
-    // @Override: Sobrescribe el método definido en la interfaz SagaService.
     @Override
-    // @Transactional: Asegura que todos los cambios a la base de datos (reserva y
-    // saga) ocurran
-    // como una sola unidad atómica: si algo falla, no se confirma nada.
     @Transactional
     public Optional<ReservaResponse> confirmarReserva(UUID idReserva) {
-        // Log de información: rastreamos el evento de confirmación en la consola del
-        // servidor.
         log.info("Confirmando reserva ID: {}", idReserva);
 
-        // Utilizamos Optional.map() para ejecutar lógica solo si la reserva existe,
-        // evitando errores de "NullPointerException".
         return reservaRepository.findById(idReserva).map(reserva -> {
 
-            // Extraemos el expediente (Saga) asociado a esta reserva para verificar su
-            // estado global.
             SagaVehiculo saga = reserva.getSagaVehiculo();
 
-            // REGLA DE NEGOCIO: Validamos que la Saga esté en "EN_PROGRESO".
-            // No podemos confirmar una saga que ya fue cancelada, falló o ya terminó.
             if (saga != null && saga.getEstadoSaga() != EstadoSaga.EN_PROGRESO) {
-                // Lanzamos una excepción de negocio si la saga no está en el estado correcto.
                 throw new BusinessException(
-                        "La Saga no está en un estado válido para ser confirmada: " + saga.getEstadoSaga());
+                        "El proceso de reserva no se encuentra en un estado válido para ser confirmado. Estado actual: "
+                                + saga.getEstadoSaga());
             }
 
-            // Cambiamos el estado del recibo de la reserva de PENDIENTE a CONFIRMADA.
             reserva.setEstadoReserva(EstadoReserva.CONFIRMADA);
-
-            // Registramos la fecha exacta en la que se realizó esta confirmación.
             reserva.setActualizadoEn(LocalDateTime.now());
-
-            // Persistimos el cambio en la tabla de reservas.
             reservaRepository.save(reserva);
 
-            // Si el expediente (Saga) existe, lo marcamos como COMPLETADA (fin exitoso).
             if (saga != null) {
-                // Actualizamos el estado del orquestador.
                 saga.setEstadoSaga(EstadoSaga.COMPLETADA);
-                // Registramos la fecha de cierre.
                 saga.setActualizadoEn(LocalDateTime.now());
-                // Guardamos el estado final del expediente en base de datos.
                 sagaRepository.save(saga);
             }
 
-            // Log de éxito: confirma que la transacción distribuida finalizó correctamente.
-            log.info("Saga COMPLETADA. Reserva {} confirmada exitosamente.", reserva.getIdReserva());
+            log.info("Proceso COMPLETADO. Reserva {} confirmada exitosamente.", reserva.getIdReserva());
 
-            // Retornamos la entidad confirmada para que el controlador pueda usarla.
             return toReservaResponse(reserva);
         });
     }
@@ -305,7 +268,6 @@ public class SagaServiceImpl implements SagaService {
     public List<ReservaResponse> confirmarReservaPorPlaca(String numeroPlaca) {
         log.info("Iniciando confirmación masiva de reservas pendientes para el vehículo con placa: {}", numeroPlaca);
 
-        // 1. BÚSQUEDA MASIVA:
         List<ReservaVehiculo> reservasPendientes = reservaRepository
                 .findAllByVehiculoNumeroPlacaIgnoreCaseAndEstadoReserva(numeroPlaca, EstadoReserva.PENDIENTE);
 
@@ -314,34 +276,23 @@ public class SagaServiceImpl implements SagaService {
                     "No se encontró ninguna reserva PENDIENTE para el vehículo con placa: " + numeroPlaca);
         }
 
-        // 2. PROCESAMIENTO EN BUCLE (Reservas y Sagas):
         reservasPendientes.forEach(reserva -> {
-
-            // A. Confirmamos el recibo de la reserva
             reserva.setEstadoReserva(EstadoReserva.CONFIRMADA);
             reserva.setActualizadoEn(LocalDateTime.now());
 
-            // B. Buscamos el expediente (Saga) de esta reserva y lo cerramos
             SagaVehiculo saga = reserva.getSagaVehiculo();
             if (saga != null && saga.getEstadoSaga() == EstadoSaga.EN_PROGRESO) {
                 saga.setEstadoSaga(EstadoSaga.COMPLETADA);
                 saga.setActualizadoEn(LocalDateTime.now());
-                sagaRepository.save(saga); // Guardamos la saga individual
+                sagaRepository.save(saga);
             }
 
-            log.info("Reserva ID {} CONFIRMADA y su Saga COMPLETADA.", reserva.getIdReserva());
+            log.info("Reserva ID {} CONFIRMADA y su proceso interno COMPLETADO.", reserva.getIdReserva());
         });
 
-        // NOTA: Eliminamos la lógica de pasar el vehículo a RESERVADO aquí,
-        // ya que el VehicleStateScheduler lo hará automáticamente por tiempo.
-
-        // 3. PERSISTENCIA EN BLOQUE (BATCH):
         List<ReservaVehiculo> reservasConfirmadas = reservaRepository.saveAll(reservasPendientes);
         log.info("Se confirmaron exitosamente {} reservas para la placa {}.", reservasConfirmadas.size(), numeroPlaca);
 
-        // 4. PREVENCIÓN DEL ERROR LAZY (Mapeo a DTO dentro de la transacción):
-        // Convertimos la lista de entidades en una lista de Records (DTOs) listos para
-        // enviar al JSON.
         return reservasConfirmadas.stream()
                 .map(this::toReservaResponse)
                 .toList();
@@ -350,23 +301,19 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional
     public ReservaResponse actualizarFechasReserva(UUID idReserva, UpdateReservaDatesRequest request) {
-        // 1. Buscamos la reserva o disparamos 404
         ReservaVehiculo reserva = reservaRepository.findById(idReserva)
                 .orElseThrow(() -> new ResourceNotFoundException("Reserva", "ID", idReserva));
 
-        // 2. Validación cronológica manual interna (coherencia física)
         if (request.fechaFin().isBefore(request.fechaInicio()) || request.fechaFin().isEqual(request.fechaInicio())) {
             throw new BusinessException("La fecha de fin debe ser estrictamente posterior a la fecha de inicio.");
         }
 
-        // 3. REGLA DE NEGOCIO: Comprobar estado apto para modificación
         if (reserva.getEstadoReserva() != EstadoReserva.PENDIENTE
                 && reserva.getEstadoReserva() != EstadoReserva.CONFIRMADA) {
             throw new BusinessException(
                     "No se pueden modificar las fechas de una reserva en estado: " + reserva.getEstadoReserva());
         }
 
-        // 4. REGLA DE NEGOCIO: Evitar solapamientos en agendas activas
         List<EstadoReserva> estadosCriticos = List.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA);
         List<ReservaVehiculo> colisiones = reservaRepository.findOverlappingReservations(
                 reserva.getVehiculo().getIdVehiculo(),
@@ -375,8 +322,6 @@ public class SagaServiceImpl implements SagaService {
                 request.fechaFin(),
                 estadosCriticos);
 
-        // 5. Si existen colisiones, disparamos el flujo estructurado de conflictos
-        // (HTTP 400 con arreglo de reservas)
         if (!colisiones.isEmpty()) {
             List<AgendaReservaResponse> conflictosResponse = colisiones.stream()
                     .map(c -> new AgendaReservaResponse(c.getFechaInicio(), c.getFechaFin(),
@@ -386,412 +331,273 @@ public class SagaServiceImpl implements SagaService {
                     conflictosResponse);
         }
 
-        // 6. Mutación segura de datos y auditoría de bloqueo optimista (@Version)
         reserva.setFechaInicio(request.fechaInicio());
         reserva.setFechaFin(request.fechaFin());
         reserva.setActualizadoEn(LocalDateTime.now());
 
         ReservaVehiculo reservaActualizada = reservaRepository.save(reserva);
 
-        // 7. Mapeo y retorno desacoplado por medio de tu DtoMapperReserva
         return dtoMapperReserva.toDto(reservaActualizada);
     }
 
-    // @Override: Indica que estamos implementando la lógica definida en el contrato
-    // SagaService.
     @Override
-    // @Transactional: Esencial para operaciones de rollback. Si la compensación
-    // falla,
-    // la base de datos no quedará en un estado inconsistente.
     @Transactional
-    public boolean compensarPorReservaId(UUID reservaId, String motivo) {
+    public ReservaResponse compensarPorReservaId(UUID reservaId, String motivo) {
+        log.info("Iniciando anulación para la Reserva ID: {}", reservaId);
 
-        // Log para auditoría: permite rastrear en los logs qué reserva se intenta
-        // revertir y cuál es el motivo.
-        log.info("Iniciando compensación para Reserva ID: {}", reservaId);
-
-        // Paso 1: Localizamos el recibo (reserva) en la base de datos.
-        // Si no existe, ResourceNotFoundException dispara un error 404.
         ReservaVehiculo reserva = reservaRepository.findById(reservaId)
                 .orElseThrow(() -> new ResourceNotFoundException("ReservaVehiculo", "id", reservaId));
 
-        // Paso 2: Verificamos si existe un expediente (Saga) ligado a esta reserva.
-        // El Orquestador de Sagas es el único que conoce los pasos que se tomaron,
-        // así que es él quien sabe cómo deshacerlos.
         if (reserva.getSagaVehiculo() != null) {
-
-            // Paso 3: Delegación.
-            // En lugar de duplicar lógica aquí, le pasamos la responsabilidad al método
-            // maestro
-            // 'compensarSaga', que sabe cómo liberar vehículos, cancelar recibos y auditar
-            // el rollback.
-            return compensarSaga(reserva.getSagaVehiculo().getIdSaga(), motivo);
-        }
-
-        // Si la reserva no tiene saga (es decir, no fue una transacción distribuida),
-        // no hay nada "distribuido" que compensar. Retornamos 'false' indicando que no
-        // se aplicó rollback.
-        return false;
-    }
-
-    // @Override: Indica que implementamos la lógica definida en la interfaz.
-    @Override
-    // @Transactional: Envuelve todo el proceso en una sola transacción. Si falla
-    // una línea,
-    // el estado de la base de datos no se altera (Rollback total).
-    @Transactional
-    public boolean compensarSaga(UUID sagaId, String motivo) {
-        // Log para auditoría: permite rastrear qué expediente se está revirtiendo y por
-        // qué causa.
-        log.info("Iniciando compensación (rollback) para SagaID: {}. Motivo: {}", sagaId, motivo);
-
-        // Paso 1: Localizamos el expediente de la Saga. Si no existe,
-        // ResourceNotFoundException lanza un 404.
-        SagaVehiculo saga = sagaRepository.findById(sagaId)
-                .orElseThrow(() -> new ResourceNotFoundException("SagaVehiculo", "id", sagaId));
-
-        // Paso 2: Idempotencia. Si la saga ya está compensada, no hacemos nada.
-        // Esto evita que reintentos externos ejecuten la lógica de compensación varias
-        // veces.
-        if (saga.getEstadoSaga() == EstadoSaga.COMPENSADA) {
-            log.info("La saga {} ya estaba compensada previamente.", sagaId);
-            return true;
-        }
-
-        // Paso 3: Regla de Negocio - Límite de retroactividad (Auditoría contable).
-        if (saga.getEstadoSaga() == EstadoSaga.COMPLETADA) {
-            // Calculamos cuántos días han pasado desde que el trámite finalizó
-            // exitosamente.
-            long diasTranscurridos = ChronoUnit.DAYS.between(saga.getActualizadoEn(), LocalDateTime.now());
-
-            // Si es un trámite muy viejo, prohibimos revertirlo para proteger registros
-            // contables/fiscales.
-            if (diasTranscurridos > 15) {
-                throw new BusinessException("No se puede compensar una saga completada hace más de 15 días.");
-            }
-        }
-
-        // Paso 4: Búsqueda del recibo asociado a este vehículo.
-        // Buscamos si hay alguna reserva "en espera" (pendiente) para este camión.
-        ReservaVehiculo reserva = reservaRepository.findReservaPendienteByVehiculoId(saga.getVehiculo().getIdVehiculo())
-                .orElse(null);
-
-        // Si encontramos un recibo, lo anulamos físicamente marcándolo como CANCELADA.
-        if (reserva != null) {
+            // El método compensarSaga internamente ya cambia el estado de la reserva a CANCELADA
+            compensarSaga(reserva.getSagaVehiculo().getIdSaga(), motivo);
+        } else {
+            // Respaldo: si por alguna razón no tuviera saga, forzamos la cancelación directa
             reserva.setEstadoReserva(EstadoReserva.CANCELADA);
             reserva.setActualizadoEn(LocalDateTime.now());
             reservaRepository.save(reserva);
         }
 
-        // Paso 5: Recuperamos el activo físico (el camión).
-        Vehiculo vehiculo = saga.getVehiculo();
+        // Retornamos el objeto completo mapeado a DTO con su nuevo estado
+        return toReservaResponse(reserva);
+    }
 
-        // Guardamos el estado anterior (ej: RESERVADO) para dejar rastro en el
-        // historial.
+
+   @Override
+    @Transactional
+    public List<ReservaResponse> cancelarReservasPorPlaca(String placa, String motivo) {
+        log.info("Iniciando cancelación masiva de reservas para la placa: {}", placa);
+
+        Vehiculo vehiculo = vehicleRepository.findByNumeroPlacaIgnoreCaseAndActivoTrue(placa)
+                .orElseThrow(() -> new ResourceNotFoundException("Vehículo", "placa", placa));
+
+        List<EstadoReserva> estadosCriticos = List.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA);
+        List<ReservaVehiculo> reservas = reservaRepository.findByVehiculo_IdVehiculoAndEstadoReservaIn(
+                vehiculo.getIdVehiculo(), estadosCriticos);
+
+        LocalDateTime ahora = LocalDateTime.now();
+        java.util.List<ReservaVehiculo> reservasCanceladas = new java.util.ArrayList<>();
+        
+        // Formateador de fecha para que quede exactamente como en tu imagen: dd/MM/yyyy HH:mm
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+        for (ReservaVehiculo reserva : reservas) {
+            
+            boolean esViajeEnCurso = reserva.getEstadoReserva() == EstadoReserva.CONFIRMADA &&
+                                     !ahora.isBefore(reserva.getFechaInicio()) && 
+                                     !ahora.isAfter(reserva.getFechaFin());
+
+            String motivoSaga = motivo; // Por defecto, usamos el motivo que escribió el usuario
+
+            // NUEVA REGLA: Interceptamos la reserva en curso, pero NO la omitimos, la cortamos.
+            if (vehiculo.getEstadoVehiculo() == EstadoVehiculo.RESERVADO && esViajeEnCurso) {
+                log.info("Corte de Viaje Activo: La reserva {} será truncada y cancelada masivamente.", reserva.getIdReserva());
+                
+                // 1. Truncamos la fecha de fin a la fecha/hora actual del sistema
+                reserva.setFechaFin(ahora);
+                
+                // 2. Modificamos el motivo solo para esta reserva, añadiendo el aviso de corte
+                motivoSaga = motivo + " | [AVISO AUTOMÁTICO: El vehículo estaba operando. Se cortó la reserva activa hasta la fecha " + ahora.format(formatter) + "]." + " por un caso de fuerza mayor.";
+            }
+
+            // 3. Cancelamos la reserva (Aplica para la que estaba en curso y para las futuras)
+            reserva.setEstadoReserva(EstadoReserva.CANCELADA);
+            reserva.setActualizadoEn(ahora);
+            reservaRepository.save(reserva);
+
+            // 4. Disparamos la compensación enviando el motivo adecuado a los demás microservicios
+            if (reserva.getSagaVehiculo() != null) {
+                compensarSaga(reserva.getSagaVehiculo().getIdSaga(), motivoSaga);
+            }
+
+            reservasCanceladas.add(reserva);
+        }
+
+        // Convertimos la lista de entidades canceladas a lista de DTOs y la retornamos
+        return reservasCanceladas.stream()
+                .map(this::toReservaResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public boolean compensarSaga(UUID sagaId, String motivo) {
+        log.info("Iniciando reversión de datos (anulación) para el Trámite ID: {}. Motivo: {}", sagaId, motivo);
+
+        SagaVehiculo saga = sagaRepository.findById(sagaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Trámite de Reserva", "id", sagaId));
+
+        if (saga.getEstadoSaga() == EstadoSaga.COMPENSADA) {
+            log.info("El proceso de reserva {} ya estaba anulado previamente.", sagaId);
+            return true;
+        }
+
+        if (saga.getEstadoSaga() == EstadoSaga.COMPLETADA) {
+            long diasTranscurridos = ChronoUnit.DAYS.between(saga.getActualizadoEn(), LocalDateTime.now());
+            if (diasTranscurridos > 15) {
+                throw new BusinessException(
+                        "No se puede revertir un proceso de reserva completado hace más de 15 días.");
+            }
+        }
+
+        ReservaVehiculo reserva = reservaRepository.findBySagaVehiculo_IdSaga(sagaId).orElse(null);
+
+        if (reserva != null) {
+            reserva.setEstadoReserva(EstadoReserva.CANCELADA);
+            reserva.setActualizadoEn(LocalDateTime.now());
+            reservaRepository.save(reserva);
+            log.info("Reserva ID {} amarrada al proceso fue cancelada exitosamente.", reserva.getIdReserva());
+        }
+
+        Vehiculo vehiculo = saga.getVehiculo();
         EstadoVehiculo estadoAnterior = vehiculo.getEstadoVehiculo();
 
-        // Liberamos el camión: lo regresamos a DISPONIBLE para que pueda ser rentado de
-        // nuevo.
-        vehiculo.setEstadoVehiculo(EstadoVehiculo.DISPONIBLE);
-        vehiculo.setActualizadoEn(LocalDateTime.now());
-        vehicleRepository.save(vehiculo);
+        String usuarioActual = "SISTEMA_AUTOMATICO";
+        if (SecurityContextHolder.getContext().getAuthentication() != null) {
+            usuarioActual = SecurityContextHolder.getContext().getAuthentication().getName();
+        }
 
-        // Paso 6: Obtenemos el usuario que ejecutó la compensación mediante el contexto
-        // de seguridad.
-        String usuarioActual = SecurityContextHolder.getContext().getAuthentication().getName();
+        if (estadoAnterior == EstadoVehiculo.RESERVADO || estadoAnterior == EstadoVehiculo.DISPONIBLE) {
+            vehiculo.setEstadoVehiculo(EstadoVehiculo.DISPONIBLE);
+            vehiculo.setActualizadoEn(LocalDateTime.now());
+            vehicleRepository.save(vehiculo);
 
-        // Paso 7: Registramos en el Historial (Bitácora).
-        // Documentamos que el vehículo cambió de estado debido a un rollback.
-        registrarHistorial(vehiculo, estadoAnterior, EstadoVehiculo.DISPONIBLE,
-                "Compensación de Saga: " + motivo, usuarioActual);
+            registrarHistorial(vehiculo, estadoAnterior, EstadoVehiculo.DISPONIBLE,
+                    "Anulación de reserva: " + motivo, usuarioActual);
 
-        // Paso 8: Finalizamos el expediente de la Saga.
-        // Marcamos el expediente como COMPENSADA (revertida exitosamente).
+            log.info("Vehículo {} devuelto a estado DISPONIBLE.", vehiculo.getNumeroPlaca());
+        } else {
+            log.warn("El vehículo {} no se devolvió a DISPONIBLE porque se encuentra en estado de emergencia: {}",
+                    vehiculo.getNumeroPlaca(), estadoAnterior);
+        }
+
         saga.setEstadoSaga(EstadoSaga.COMPENSADA);
-        // Anotamos quién fue el responsable de la anulación.
         saga.setCompensadoPor(usuarioActual);
-        // Guardamos el motivo técnico del fallo.
         saga.setUltimoError(motivo);
         saga.setActualizadoEn(LocalDateTime.now());
-        // Persistimos el cierre del expediente.
         sagaRepository.save(saga);
 
-        // Log final: confirmamos que la transacción se deshizo correctamente.
-        log.info("Compensación completada exitosamente para SagaID: {}", sagaId);
+        log.info("Anulación completada exitosamente para el Trámite ID: {}", sagaId);
         return true;
     }
 
-    // Método privado (interno): Este método actúa como una "caja negra" de
-    // auditoría.
-    // Centraliza la creación de registros en la bitácora para asegurar
-    // consistencia.
     private void registrarHistorial(Vehiculo vehiculo, EstadoVehiculo estadoAnterior,
             EstadoVehiculo estadoNuevo, String motivo, String servicioOrigen) {
 
-        // Crea una instancia vacía de la entidad HistorialEstadoVehiculo (la página en
-        // el libro de auditoría).
         HistorialEstadoVehiculo historial = new HistorialEstadoVehiculo();
-
-        // Enlaza el registro con el vehículo al que le ocurrió el cambio (Relación
-        // Foreign Key).
         historial.setVehiculo(vehiculo);
-
-        // REGLA DE SEGURIDAD (Null Check): Si es el primer estado del vehículo,
-        // estadoAnterior es null.
-        // Convertimos el Enum a String usando .name(). Si es nulo, guardamos null
-        // explícitamente en la BD.
         historial.setEstadoAnterior(estadoAnterior != null ? estadoAnterior.name() : null);
-
-        // Convertimos el estado nuevo (Enum) a texto plano (String) para persistirlo en
-        // la tabla.
         historial.setEstadoNuevo(estadoNuevo.name());
-
-        // Guardamos el motivo del cambio (ej: "Mantenimiento", "Cancelación por falta
-        // de pago").
-        // Es vital para que un humano pueda entender el porqué de la historia.
         historial.setMotivoCambio(motivo);
-
-        // Guardamos el origen (ej: "microservicio-asignaciones").
-        // Esto permite rastrear qué parte del sistema fue el "culpable" o responsable
-        // del cambio.
         historial.setServicioOrigen(servicioOrigen);
-
-        // Capturamos el timestamp exacto del servidor en el momento de la ejecución.
-        // Al usar LocalDateTime.now(), garantizamos un sello de tiempo preciso para la
-        // línea de tiempo.
         historial.setRegistradoEn(LocalDateTime.now());
-
-        // Persistimos (guardamos) la hoja en la tabla 'historial_estados_vehiculo'.
-        // Una vez guardado aquí, el registro es inmutable para efectos de auditoría.
         historialEstadoRepository.save(historial);
     }
 
-    // Método privado (interno): Encapsula la lógica de transformación de Entidad a
-    // DTO.
-    // Al ser privado, garantizas que solo este servicio conoce cómo se construye la
-    // respuesta.
     private ReservaResponse toReservaResponse(ReservaVehiculo reserva) {
 
-        // Extraemos el vehículo a una variable local (v) para evitar llamados anidados
-        // profundos.
-        // Esto hace que el código sea más legible y manejable.
         Vehiculo v = reserva.getVehiculo();
 
-        // Creamos y retornamos el "Record" (DTO) inmutable de Java 21.
-        // El uso de un Record garantiza que, una vez creado, nadie pueda modificar
-        // estos datos.
         return new ReservaResponse(
-                reserva.getIdReserva(), // ID único de la reserva.
-
-                // Mapeo defensivo: Si el vehículo es nulo, enviamos null en lugar de romper el
-                // sistema.
+                reserva.getIdReserva(),
                 v != null ? v.getIdVehiculo() : null,
-
-                // Convertimos el Enum a String (.name()) para que el JSON lo lea como texto
-                // (ej: "CONFIRMADA").
                 reserva.getEstadoReserva() != null ? reserva.getEstadoReserva().name() : null,
-
-                // Convertimos el UUID a String para compatibilidad universal con navegadores.
                 reserva.getIdAsignacionExt() != null ? reserva.getIdAsignacionExt().toString() : null,
-
-                reserva.getSolicitadoPor(), // Nombre del solicitante.
-                reserva.getFechaInicio(), // Fecha de inicio.
-                reserva.getFechaFin(), // Fecha de fin.
-                reserva.getClaveIdempotencia(), // Clave de control.
-
-                // Extraemos el ID de la Saga si existe (puede ser nulo si la reserva no es
-                // parte de una saga).
+                reserva.getSolicitadoPor(),
+                reserva.getFechaInicio(),
+                reserva.getFechaFin(),
+                reserva.getClaveIdempotencia(),
                 reserva.getSagaVehiculo() != null ? reserva.getSagaVehiculo().getIdSaga() : null,
-
-                // =========================================================================
-                // EXTRACCIÓN PLANA (FLATTENING) DE DATOS DEL VEHÍCULO
-                // =========================================================================
-                // En lugar de enviar un objeto "vehiculo" complejo al cliente, "aplanamos"
-                // los datos para que el Frontend reciba una estructura simple y fácil de leer.
-
-                // 1. Placa del vehículo.
                 v != null ? v.getNumeroPlaca() : null,
-
-                // 2. Nombre del tipo de vehículo (Acceso a la entidad relacionada).
-                // Verificamos dos niveles de nulos (v y TipoVehiculo) para evitar
-                // NullPointerExceptions.
                 v != null && v.getTipoVehiculo() != null ? v.getTipoVehiculo().getNombreTipo() : null,
-
-                // 3. Descripción del catálogo del tipo de vehículo.
                 v != null && v.getTipoVehiculo() != null ? v.getTipoVehiculo().getDescripcion() : null,
-
-                // 4. Kilometraje actual (Dato operativo clave).
                 v != null ? v.getKilometraje() : null,
-
-                // 5. Capacidad de carga legal (Dato extraído del catálogo del vehículo).
                 v != null && v.getTipoVehiculo() != null ? v.getTipoVehiculo().getCapacidadCarga() : null);
     }
 
-    // @Override: Indica que estamos implementando el contrato definido en la
-    // interfaz SagaService.
     @Override
-    // @Transactional(readOnly = true): Optimizamos la consulta. Al ser solo
-    // lectura, Hibernate no necesita
-    // realizar "Dirty Checking" (verificar si los datos cambiaron), reduciendo el
-    // consumo de CPU y memoria.
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findAllReservas(Pageable pageable) {
-
-        // Log de auditoría: Deja rastro de la petición en la consola del servidor para
-        // monitoreo.
         log.info("Consultando el historial global paginado de todas las reservas.");
-
-        // 1. BUSQUEDA PAGINADA:
-        // Solicitamos a la base de datos solo una porción de los registros (ej: página
-        // 0, tamaño 20).
-        // 'findAllByOrderByCreadoEnDesc' ordena los resultados de forma descendente
-        // (los más recientes primero).
-        // Esto es mucho más eficiente que traer todo el historial a la memoria del
-        // microservicio.
         Page<ReservaVehiculo> paginaReservas = reservaRepository.findAllByOrderByCreadoEnDesc(pageable);
-
-        // 2. TRANSFORMACIÓN (MAPPING):
-        // Usamos el 'dtoMapperReserva' para convertir cada entidad (ReservaVehiculo) en
-        // un DTO (ReservaResponse).
-        // .map() aplica esta conversión a cada elemento de la página automáticamente,
-        // preservando la información de paginación.
         return paginaReservas.map(dtoMapperReserva::toDto);
     }
 
-    // Operación de solo lectura: optimiza rendimiento.
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasPendientes(Pageable pageable) {
-        // Corregido: Log específico para este estado.
         log.info("Consultando la bandeja de reservas en estado PENDIENTE.");
-
-        // Buscamos las reservas con estado PENDIENTE, ordenadas por creación (más
-        // reciente primero).
         Page<ReservaVehiculo> paginaPendientes = reservaRepository
                 .findAllByEstadoReservaOrderByCreadoEnDesc(EstadoReserva.PENDIENTE, pageable);
-
-        // Mapeamos a DTO para ocultar detalles técnicos de la BD al Frontend.
         return paginaPendientes.map(dtoMapperReserva::toDto);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasConfirmadas(Pageable pageable) {
-        // Corregido: Log específico para este estado.
         log.info("Consultando la bandeja de reservas en estado CONFIRMADA.");
-
-        // Buscamos solo aquellas que ya fueron aprobadas.
         Page<ReservaVehiculo> paginaConfirmadas = reservaRepository
                 .findAllByEstadoReservaOrderByCreadoEnDesc(EstadoReserva.CONFIRMADA, pageable);
-
         return paginaConfirmadas.map(dtoMapperReserva::toDto);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasFallidas(Pageable pageable) {
-        // Corregido: Log específico para este estado.
         log.info("Consultando la bandeja de reservas en estado FALLIDA.");
-
-        // Buscamos las que tuvieron problemas técnicos o de negocio (necesitan
-        // revisión).
         Page<ReservaVehiculo> paginaFallidas = reservaRepository
                 .findAllByEstadoReservaOrderByCreadoEnDesc(EstadoReserva.FALLIDA, pageable);
-
         return paginaFallidas.map(dtoMapperReserva::toDto);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasCanceladas(Pageable pageable) {
-        // Corregido: Log específico para este estado.
         log.info("Consultando la bandeja de reservas en estado CANCELADA.");
-
-        // Buscamos las que fueron anuladas por el cliente o el sistema.
         Page<ReservaVehiculo> paginaCanceladas = reservaRepository
                 .findAllByEstadoReservaOrderByCreadoEnDesc(EstadoReserva.CANCELADA, pageable);
-
         return paginaCanceladas.map(dtoMapperReserva::toDto);
     }
 
-    // =========================================================================
-    // CONSULTAS POR ID (Puntual)
-    // =========================================================================
-
     @Override
-    @Transactional(readOnly = true) // Optimizado para lectura.
+    @Transactional(readOnly = true)
     public Optional<ReservaResponse> findReservaById(UUID idReserva) {
-        // Busca en base de datos la reserva por su identificador único.
-        // El uso de .map() nos permite transformar la entidad (si existe) en un DTO
-        // en una sola línea de código, manteniendo la fluidez funcional.
         return reservaRepository.findById(idReserva)
                 .map(this::toReservaResponse);
     }
 
-    // =========================================================================
-    // CONSULTAS POR PLACA (Forense / Historial)
-    // =========================================================================
-
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasByPlaca(String placa, Pageable pageable) {
-        // Log para auditoría: permite rastrear qué vehículo está siendo investigado.
         log.info("Consultando historial de reservas para el vehículo con placa: {}", placa);
-
-        // 1. Buscamos todas las reservas asociadas a la placa.
-        // Al usar 'IgnoreCase', evitamos errores de búsqueda si el operador escribe
-        // 'abc123' en lugar de 'ABC123'.
-        // Al usar 'Pageable', garantizamos que si el camión tiene 500 viajes, el
-        // sistema paginará los resultados.
         Page<ReservaVehiculo> paginaReservas = reservaRepository
                 .findByVehiculo_NumeroPlacaIgnoreCaseOrderByCreadoEnDesc(placa, pageable);
-
-        // 2. Mapeamos la página completa (transformamos cada elemento dentro de la
-        // página).
         return paginaReservas.map(dtoMapperReserva::toDto);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasByPlacaAndEstado(String placa, EstadoReserva estado, Pageable pageable) {
-        // Log específico: ayuda a saber si estamos buscando, por ejemplo, reservas
-        // canceladas de un camión específico.
         log.info("Consultando reservas para el vehículo con placa: {} filtradas por estado: {}", placa, estado);
-
-        // 1. Búsqueda compuesta: Filtramos en BD por dos criterios simultáneos.
-        // Esto es mucho más rápido que traer todas las reservas del camión y filtrar en
-        // memoria.
         Page<ReservaVehiculo> paginaReservas = reservaRepository
                 .findByVehiculo_NumeroPlacaIgnoreCaseAndEstadoReservaOrderByCreadoEnDesc(placa, estado, pageable);
-
-        // 2. Mapeo a DTO para entregar al cliente una respuesta limpia y sin detalles
-        // técnicos de la BD.
         return paginaReservas.map(dtoMapperReserva::toDto);
     }
 
     // =========================================================================
-    // CONSULTA GLOBAL DE SAGAS
-    // =========================================================================
-
-    @Override
-    @Transactional(readOnly = true) // Optimizado: solo lectura, sin Dirty Checking.
-    public Page<SagaResponse> findAllSagas(Pageable pageable) {
-        // Recupera todos los expedientes de Saga, ordenados del más reciente al más
-        // antiguo.
-        // Convertimos cada entidad en un DTO para enviar al Frontend.
-        return sagaRepository.findAllByOrderByCreadoEnDesc(pageable)
-                .map(dtoMapperSaga::toDto);
-    }
-
-    // =========================================================================
-    // FILTROS DE ESTADO (Monitoreo de flujo de Saga)
+    // CONSULTAS GLOBALES DE PROCESOS (Anteriormente Sagas)
     // =========================================================================
 
     @Override
     @Transactional(readOnly = true)
+    public Page<SagaResponse> findAllSagas(Pageable pageable) {
+        return sagaRepository.findAllByOrderByCreadoEnDesc(pageable)
+                .map(dtoMapperSaga::toDto);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<SagaResponse> findSagasIniciadas(Pageable pageable) {
-        // Filtra expedientes recién creados. Útil para verificar si el orquestador está
-        // recibiendo carga.
         return sagaRepository.findAllByEstadoSagaOrderByCreadoEnDesc(EstadoSaga.INICIADA, pageable)
                 .map(dtoMapperSaga::toDto);
     }
@@ -799,8 +605,6 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<SagaResponse> findSagasEnProgreso(Pageable pageable) {
-        // Filtra expedientes que están procesándose activamente.
-        // Es la métrica clave para detectar latencia en procesos distribuidos.
         return sagaRepository.findAllByEstadoSagaOrderByCreadoEnDesc(EstadoSaga.EN_PROGRESO, pageable)
                 .map(dtoMapperSaga::toDto);
     }
@@ -808,7 +612,6 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<SagaResponse> findSagasCompletadas(Pageable pageable) {
-        // Filtra expedientes exitosos. Útil para auditoría de finalización de procesos.
         return sagaRepository.findAllByEstadoSagaOrderByCreadoEnDesc(EstadoSaga.COMPLETADA, pageable)
                 .map(dtoMapperSaga::toDto);
     }
@@ -816,8 +619,6 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<SagaResponse> findSagasFallidas(Pageable pageable) {
-        // Filtra expedientes con error. Estos registros requieren atención manual (o
-        // reintento automático).
         return sagaRepository.findAllByEstadoSagaOrderByCreadoEnDesc(EstadoSaga.FALLIDA, pageable)
                 .map(dtoMapperSaga::toDto);
     }
@@ -825,22 +626,13 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<SagaResponse> findSagasCompensadas(Pageable pageable) {
-        // Filtra expedientes que fueron revertidos. Vital para análisis de causas raíz
-        // (¿por qué falló?).
         return sagaRepository.findAllByEstadoSagaOrderByCreadoEnDesc(EstadoSaga.COMPENSADA, pageable)
                 .map(dtoMapperSaga::toDto);
     }
 
-    // =========================================================================
-    // BÚSQUEDAS ESPECÍFICAS POR VEHÍCULO (Trazabilidad)
-    // =========================================================================
-
     @Override
     @Transactional(readOnly = true)
     public Page<SagaResponse> findSagasByPlaca(String placa, Pageable pageable) {
-        // Busca todo el historial de sagas de un camión específico.
-        // Ideal para ver qué procesos han afectado a un vehículo concreto a lo largo
-        // del tiempo.
         return sagaRepository.findByVehiculo_NumeroPlacaIgnoreCaseOrderByCreadoEnDesc(placa, pageable)
                 .map(dtoMapperSaga::toDto);
     }
@@ -848,11 +640,8 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<SagaResponse> findSagasByPlacaAndEstado(String placa, EstadoSaga estado, Pageable pageable) {
-        // Búsqueda avanzada: Cruza vehículo y estado.
-        // Ejemplo: "¿Tiene este camión alguna saga en estado FALLIDA que deba revisar?"
         return sagaRepository
                 .findByVehiculo_NumeroPlacaIgnoreCaseAndEstadoSagaOrderByCreadoEnDesc(placa, estado, pageable)
                 .map(dtoMapperSaga::toDto);
     }
-
 }
