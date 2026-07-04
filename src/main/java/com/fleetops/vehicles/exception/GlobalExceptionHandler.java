@@ -235,15 +235,22 @@ public class GlobalExceptionHandler {
             DataIntegrityViolationException ex, 
             HttpServletRequest request) {
 
-        // Mensaje genérico por defecto
-        String mensajeUsuario = "No se pudo procesar la solicitud debido a un conflicto en la base de datos (Ej. dato duplicado).";
-
-        // Inspeccionamos el error real de PostgreSQL para dar un mensaje milimétrico
+        String mensajeUsuario = "No se pudo procesar la solicitud debido a un conflicto en la base de datos (dato duplicado).";
         String causaReal = ex.getMostSpecificCause().getMessage();
-        
-        // Si PostgreSQL se queja específicamente de nuestro nuevo índice UNIQUE:
-        if (causaReal != null && causaReal.contains("uq_reservas_id_asignacion_ext")) {
-            mensajeUsuario = "Error: El ID de asignación externa ya se encuentra vinculado a otra reserva. Verifique la información.";
+
+        if (causaReal != null) {
+            String causa = causaReal.toLowerCase();
+            if (causa.contains("uq_reservas_id_asignacion_ext") || causa.contains("id_asignacion_ext")) {
+                mensajeUsuario = "El ID de asignación externa ya está vinculado a otra reserva.";
+            } else if (causa.contains("numero_placa")) {
+                mensajeUsuario = "Ya existe un vehículo con esa placa.";
+            } else if (causa.contains("numero_chasis")) {
+                mensajeUsuario = "Ya existe un vehículo con ese número de chasis.";
+            } else if (causa.contains("numero_motor")) {
+                mensajeUsuario = "Ya existe un vehículo con ese número de motor.";
+            } else if (causa.contains("clave_idempotencia")) {
+                mensajeUsuario = "La clave de idempotencia ya fue utilizada.";
+            }
         }
 
         // Construimos el JSON de respuesta estándar de FleetOps
