@@ -13,7 +13,8 @@ class SpringSecurityConfigTest {
     @Test
     void corsPermiteOrigenesYMetodos() {
         JwtValidationFilter filter = mock(JwtValidationFilter.class);
-        SpringSecurityConfig config = new SpringSecurityConfig(filter);
+        JwtAuthenticationEntryPoint entryPoint = mock(JwtAuthenticationEntryPoint.class);
+        SpringSecurityConfig config = new SpringSecurityConfig(filter, entryPoint);
 
         CorsConfigurationSource source = config.corsConfigurationSource();
         assertNotNull(source);

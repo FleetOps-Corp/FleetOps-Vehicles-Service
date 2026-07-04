@@ -28,6 +28,6 @@ public class DevTokenPrinter implements CommandLineRunner {
         log.info("╠════════════════════════════════════════════════════════════════════════════╣");
         log.info("║  {} ║", devToken);
         log.info("╚════════════════════════════════════════════════════════════════════════════╝");
-        log.info(">>> Token opcional para pruebas en Postman (Bearer). La API no exige roles. <<<");
+        log.info(">>> Usa este token en Postman: Authorization: Bearer <token>. Sin roles. <<<");
     }
 }
