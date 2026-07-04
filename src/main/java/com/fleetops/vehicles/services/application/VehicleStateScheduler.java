@@ -128,12 +128,9 @@ public class VehicleStateScheduler {
             }
         }
 
-        // Buscamos ahora todos los vehículos que en este momento aparecen como "RESERVADOS" en todo el sistema.
-        List<Vehiculo> vehiculosReservadosEnBd = vehicleRepository.findAll().stream()
-                // Filtramos para ignorar a los dados de baja lógicamente y a los que tienen estados distintos.
-                .filter(v -> Boolean.TRUE.equals(v.getActivo()) && v.getEstadoVehiculo() == EstadoVehiculo.RESERVADO)
-                // Retornamos una lista inmutable con los resultados.
-                .toList();
+        // Buscamos solo vehículos RESERVADOS activos (sin cargar toda la flota).
+        List<Vehiculo> vehiculosReservadosEnBd = vehicleRepository
+                .findAllByEstadoVehiculoAndActivoTrue(EstadoVehiculo.RESERVADO);
 
         // Iniciamos un ciclo para revisar camión por camión los que están retenidos.
         for (Vehiculo vehiculo : vehiculosReservadosEnBd) {
@@ -174,8 +171,8 @@ public class VehicleStateScheduler {
     // AUTOMATIZACIÓN: CANCELACIÓN POR TIMEOUT (4 MINUTOS)
     // =========================================================================
 
-    // Se ejecuta cada 30 segundos (30000 milisegundos) para garantizar alta precisión.
-    @Scheduled(fixedRate = 30000)
+    // Se ejecuta cada 2 minutos; la regla de negocio sigue siendo 4 min de timeout.
+    @Scheduled(fixedRate = 120000)
     // Protege la compensación dentro de una transacción.
     @Transactional
     // Método que actúa como perro guardián para abortar reservas inconclusas.
@@ -212,8 +209,8 @@ public class VehicleStateScheduler {
     // AUTOMATIZACIÓN: REVISIÓN LEGAL DE VEHÍCULOS (VENCIDOS Y PRÓXIMOS)
     // =========================================================================
 
-    // Se ejecuta cada 60 segundos (60000 ms). Ideal para protección activa de la flota.
-    @Scheduled(fixedRate = 60000)
+    // Una vez al día a las 06:00; SOAT/RTM no requieren revisión cada minuto.
+    @Scheduled(cron = "0 0 6 * * *")
     // Ejecuta las operaciones en bloque. Si ocurre un fallo, los cambios se revierten para proteger la base.
     @Transactional
     // Método que audita y sanciona vehículos que incumplen las leyes de tránsito.
@@ -221,11 +218,12 @@ public class VehicleStateScheduler {
         // Inicializamos la variable 'hoy' obteniendo la fecha exacta del sistema operativo.
         LocalDate hoy = LocalDate.now();
 
-        // Extraemos un listado general de absolutamente todos los vehículos matriculados en la base de datos.
-        List<Vehiculo> todosLosVehiculos = vehicleRepository.findAll();
+        // Solo vehículos activos que aún no están inmovilizados por restricción legal.
+        List<Vehiculo> candidatosAuditoria = vehicleRepository
+                .findAllByActivoTrueAndEstadoVehiculoNot(EstadoVehiculo.FUERA_DE_SERVICIO);
 
         // Iniciamos un bucle repetitivo para analizar la carpeta legal de cada uno de los camiones.
-        for (Vehiculo vehiculo : todosLosVehiculos) {
+        for (Vehiculo vehiculo : candidatosAuditoria) {
 
             // Creamos una regla: Sólo revisaremos camiones activos y que no estén ya castigados (FUERA_DE_SERVICIO).
             if (Boolean.TRUE.equals(vehiculo.getActivo()) && vehiculo.getEstadoVehiculo() != EstadoVehiculo.FUERA_DE_SERVICIO) {

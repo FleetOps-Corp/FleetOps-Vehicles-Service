@@ -51,7 +51,7 @@ public class TipoVehiculoServiceImpl implements TipoVehiculoService {
     @Transactional(readOnly = true)
     public Page<TipoVehiculoResponse> findAll(Pageable pageable) {
         // Registro en log: Trazabilidad de la operación.
-        log.info("Consultando catálogo de tipos de vehículo (paginado)");
+        log.debug("Consultando catálogo de tipos de vehículo (paginado)");
 
         // Buscamos todas las categorías, paginamos los resultados y los mapeamos a
         // DTOs.
@@ -66,7 +66,7 @@ public class TipoVehiculoServiceImpl implements TipoVehiculoService {
     @Transactional(readOnly = true)
     public TipoVehiculoResponse findById(Long id) {
         // Log para saber qué ID se está consultando.
-        log.info("Consultando tipo de vehículo por ID: {}", id);
+        log.debug("Consultando tipo de vehículo por ID: {}", id);
 
         // Intentamos encontrar el tipo; si no existe, lanzamos excepción 404.
         TipoVehiculo tipo = tipoVehiculoRepository.findById(id)

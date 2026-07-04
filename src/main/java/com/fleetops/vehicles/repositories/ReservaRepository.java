@@ -11,6 +11,7 @@ import org.springframework.data.domain.Page;
 // Importa Pageable para definir límites de búsqueda (ej: "trae los primeros 10").
 import org.springframework.data.domain.Pageable;
 // Importa JpaRepository, la interfaz maestra que contiene todas las operaciones CRUD.
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 // Importa la anotación @Query para escribir consultas personalizadas (JPQL).
 import org.springframework.data.jpa.repository.Query;
@@ -30,6 +31,10 @@ import java.util.UUID;
 public interface ReservaRepository extends JpaRepository<ReservaVehiculo, UUID> {
     // Heredar de JpaRepository nos regala métodos como save(), findById(), delete()
     // automáticamente.
+
+    @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo", "sagaVehiculo"})
+    @Override
+    Optional<ReservaVehiculo> findById(UUID id);
 
     // @Query: Define una consulta personalizada en lenguaje JPQL.
     // Buscamos una reserva específica para un vehículo que aún no ha sido aprobada.
@@ -118,7 +123,7 @@ public interface ReservaRepository extends JpaRepository<ReservaVehiculo, UUID> 
     // Busca todas las reservas PENDIENTES o CONFIRMADAS cuyo rango de tiempo
     // abarque la hora actual.
     // =====================================================================================
-    @Query("SELECT r FROM ReservaVehiculo r WHERE r.estadoReserva IN :estados " +
+    @Query("SELECT r FROM ReservaVehiculo r JOIN FETCH r.vehiculo WHERE r.estadoReserva IN :estados " +
             "AND :now >= r.fechaInicio AND :now <= r.fechaFin")
     List<ReservaVehiculo> findCurrentlyActiveReservations(
             @Param("now") LocalDateTime now,
@@ -138,24 +143,17 @@ public interface ReservaRepository extends JpaRepository<ReservaVehiculo, UUID> 
             String numeroPlaca,
             EstadoReserva estadoReserva);
 
-    // Page<ReservaVehiculo>: Trae todas las reservas paginadas, ordenadas por fecha
-    // de creación descendente (la más nueva primero).
-    // El uso de 'Page' es vital para no traer miles de registros y colapsar el
-    // sistema.
+    @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo", "sagaVehiculo"})
     Page<ReservaVehiculo> findAllByOrderByCreadoEnDesc(Pageable pageable);
 
-    // Busca reservas por estado (ej: solo PENDIENTES) y las ordena por fecha.
+    @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo", "sagaVehiculo"})
     Page<ReservaVehiculo> findAllByEstadoReservaOrderByCreadoEnDesc(EstadoReserva estadoReserva, Pageable pageable);
 
-    // Busca reservas asociadas a un vehículo por su placa, ignorando si el usuario
-    // escribió en mayúsculas o minúsculas.
+    @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo", "sagaVehiculo"})
     Page<ReservaVehiculo> findByVehiculo_NumeroPlacaIgnoreCaseOrderByCreadoEnDesc(String numeroPlaca,
             Pageable pageable);
 
-    // Busca reservas por placa de vehículo Y estado específico, ordenando por fecha
-    // de creación.
-    // Es el método principal usado por los administradores en el dashboard de
-    // gestión.
+    @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo", "sagaVehiculo"})
     Page<ReservaVehiculo> findByVehiculo_NumeroPlacaIgnoreCaseAndEstadoReservaOrderByCreadoEnDesc(
             String numeroPlaca,
             EstadoReserva estadoReserva,

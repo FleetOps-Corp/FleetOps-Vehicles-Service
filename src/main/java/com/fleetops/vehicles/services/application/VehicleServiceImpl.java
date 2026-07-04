@@ -2,7 +2,6 @@ package com.fleetops.vehicles.services.application;
 // Define la carpeta o paquete del sistema donde vive esta clase, encargada de la lógica principal de la aplicación.
 
 import com.fleetops.vehicles.exception.BusinessException;
-import com.fleetops.vehicles.exception.DuplicateResourceException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
 import com.fleetops.vehicles.mapper.DtoMapperHistorial;
 import com.fleetops.vehicles.mapper.DtoMapperVehicle;
@@ -95,7 +94,7 @@ public class VehicleServiceImpl implements VehicleService {
         // Método que devuelve una lista paginada de vehículos.
 
         // Registro de traza (log) indicando que la consulta ha comenzado.
-        log.info("Consultando todos los vehículos paginados");
+        log.debug("Consultando todos los vehículos paginados");
 
         // Llama al repositorio para obtener solo los vehículos que están activos
         // (borrado lógico),
@@ -137,7 +136,7 @@ public class VehicleServiceImpl implements VehicleService {
         // Método para buscar un vehículo por su UUID (identificador interno único).
 
         // Registramos en log el ID para monitorear qué vehículo se está consultando.
-        log.info("Consultando vehículo por ID: {}", id);
+        log.debug("Consultando vehículo por ID: {}", id);
 
         // Buscamos el vehículo activo.
         // REGLA DE NEGOCIO: findAllByIdAndActivoTrue garantiza que aunque el ID exista,
@@ -157,7 +156,7 @@ public class VehicleServiceImpl implements VehicleService {
         // con un vehículo.
 
         // Registramos la placa en el log.
-        log.info("Consultando vehículo por placa: {}", placa);
+        log.debug("Consultando vehículo por placa: {}", placa);
 
         // REGLA DE NEGOCIO: Ignoramos mayúsculas y validamos que el vehículo esté
         // activo.
@@ -180,7 +179,7 @@ public class VehicleServiceImpl implements VehicleService {
         // Método que trae únicamente la lista paginada de vehículos listos para operar.
 
         // Registra la acción en la consola para monitoreo de operaciones.
-        log.info("Consultando vehículos disponibles");
+        log.debug("Consultando vehículos disponibles");
 
         // Filtra en BD los que están 'DISPONIBLE' y son 'Activos'.
         // Mapea el resultado a DTOs para el cliente.
@@ -194,7 +193,7 @@ public class VehicleServiceImpl implements VehicleService {
         // Método que trae la lista paginada de vehículos que tienen un viaje asignado.
 
         // Registra la acción en la consola.
-        log.info("Consultando vehículos reservados");
+        log.debug("Consultando vehículos reservados");
 
         // Filtra los que están 'RESERVADO' y son 'Activos'.
         return vehicleRepository.findAllByEstadoVehiculoAndActivoTrue(EstadoVehiculo.RESERVADO, pageable)
@@ -207,7 +206,7 @@ public class VehicleServiceImpl implements VehicleService {
         // Método que trae la lista paginada de vehículos que están en taller.
 
         // Registra la acción en la consola.
-        log.info("Consultando vehículos en mantenimiento");
+        log.debug("Consultando vehículos en mantenimiento");
 
         // Filtra los que están en 'EN_MANTENIMIENTO' y son 'Activos'.
         return vehicleRepository.findAllByEstadoVehiculoAndActivoTrue(EstadoVehiculo.EN_MANTENIMIENTO, pageable)
@@ -221,7 +220,7 @@ public class VehicleServiceImpl implements VehicleService {
         // avería.
 
         // Registra la acción en la consola.
-        log.info("Consultando vehículos fuera de servicio");
+        log.debug("Consultando vehículos fuera de servicio");
 
         // Filtra los que están 'FUERA_DE_SERVICIO' y son 'Activos'.
         return vehicleRepository.findAllByEstadoVehiculoAndActivoTrue(EstadoVehiculo.FUERA_DE_SERVICIO, pageable)
@@ -257,12 +256,7 @@ public class VehicleServiceImpl implements VehicleService {
         // historial del servidor.
         log.info("Iniciando registro de vehículo con placa: {}", request.numeroPlaca());
 
-        // REGLA DE NEGOCIO: Validamos que los datos únicos (placa, chasis, motor) no
-        // existan ya.
-        // Esto previene errores operativos y datos duplicados en el sistema.
-        validarUnicidadParaCreacion(request);
-
-        // 2. Nueva validación de documentos a 7 días
+        // Unicidad de placa/chasis/motor la garantiza la BD (UNIQUE); el handler global mapea el 409.
         validarVencimientoDocumentos(request.fechaSoat(), request.fechaRtm(), true);
 
         // BUSQUEDA DE RELACIÓN: Buscamos el catálogo de 'TipoVehiculo'.
@@ -286,15 +280,12 @@ public class VehicleServiceImpl implements VehicleService {
         vehiculo.setModelo(request.modelo());
         vehiculo.setAnioFabricacion(request.anioFabricacion());
         vehiculo.setColor(request.color());
-        vehiculo.setNumeroChasis(request.numeroChasis());
-        vehiculo.setNumeroMotor(request.numeroMotor());
+        vehiculo.setNumeroChasis(request.numeroChasis().toUpperCase());
+        vehiculo.setNumeroMotor(request.numeroMotor().toUpperCase());
         vehiculo.setKilometraje(request.kilometraje());
         vehiculo.setCiudadOperacion(request.ciudadOperacion());
         vehiculo.setSedeOperacion(request.sedeOperacion());
 
-        // =====================================================================
-        // REGLA DE NEGOCIO Y CORRECCIÓN (NULL POINTER)
-        // =====================================================================
         // Todo vehículo nuevo nace DISPONIBLE por defecto.
         // Ya no leemos 'request.estadoVehiculo()' para evitar que el sistema
         // explote si el usuario olvida mandarlo en el JSON de Postman.
@@ -335,11 +326,10 @@ public class VehicleServiceImpl implements VehicleService {
         log.info("Iniciando actualización de vehículo ID: {}", id);
 
         // Busca el vehículo en la base de datos.
-        Vehiculo vehiculo = vehicleRepository.findById(id)
+        Vehiculo vehiculo = vehicleRepository.findDetailedById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehículo", "id", id));
 
-        // REGLAS DE NEGOCIO Y VALIDACIONES
-        validarUnicidadParaActualizacion(id, request);
+        // Unicidad de placa/chasis/motor la garantiza la BD (UNIQUE); el handler global mapea el 409.
         validarVencimientoDocumentos(request.fechaSoat(), request.fechaRtm(), false);
 
         // 1. Lógica para actualizar el Tipo de Vehículo
@@ -356,8 +346,8 @@ public class VehicleServiceImpl implements VehicleService {
         vehiculo.setModelo(request.modelo());
         vehiculo.setAnioFabricacion(request.anioFabricacion());
         vehiculo.setColor(request.color());
-        vehiculo.setNumeroChasis(request.numeroChasis());
-        vehiculo.setNumeroMotor(request.numeroMotor());
+        vehiculo.setNumeroChasis(request.numeroChasis().toUpperCase());
+        vehiculo.setNumeroMotor(request.numeroMotor().toUpperCase());
         vehiculo.setKilometraje(request.kilometraje());
         vehiculo.setCiudadOperacion(request.ciudadOperacion());
         vehiculo.setSedeOperacion(request.sedeOperacion());
@@ -477,11 +467,10 @@ public class VehicleServiceImpl implements VehicleService {
     public VehicleResponse reactivarVehiculo(UUID id, String motivo) {
         log.info("Reactivando vehículo ID: {}", id);
 
-        // Usamos la búsqueda directa por ID.
-        Vehiculo vehiculo = vehicleRepository.findById(id)
+        Vehiculo vehiculo = vehicleRepository.findDetailedById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehículo", "id", id));
 
-        // Aquí SÍ necesitamos el IF, porque findById trae el vehículo sin importar su
+        // Aquí SÍ necesitamos el IF, porque findDetailedById trae el vehículo sin importar su
         // estado.
         // Evita el doble clic si ya está activo.
         if (Boolean.TRUE.equals(vehiculo.getActivo())) {
@@ -615,7 +604,7 @@ public class VehicleServiceImpl implements VehicleService {
 
         log.info("Iniciando cambio de estado para vehículo ID: {}", id);
 
-        Vehiculo vehiculo = vehicleRepository.findById(id)
+        Vehiculo vehiculo = vehicleRepository.findDetailedById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehículo", "id", id));
 
         EstadoVehiculo estadoActual = vehiculo.getEstadoVehiculo();
@@ -627,9 +616,6 @@ public class VehicleServiceImpl implements VehicleService {
             throw new BusinessException("El estado proporcionado no es válido: " + nuevoEstado);
         }
 
-        // =====================================================================
-        // 🚀 NUEVA REGLA: Bloqueo de estados redundantes (Evitar historial duplicado)
-        // =====================================================================
         if (estadoActual == estadoDestino) {
             log.warn("Intento de cambio redundante bloqueado. El vehículo ID {} ya está en estado {}", id,
                     estadoActual);
@@ -637,19 +623,14 @@ public class VehicleServiceImpl implements VehicleService {
                     + ". No se generarán registros duplicados en el historial.");
         }
 
-        // Validador de Transiciones (Finite State Machine).
         stateTransitionValidator.validateTransition(estadoActual, estadoDestino);
 
-        // =====================================================================
-        // 🚀 NUEVA REGLA: Bloqueo de transición manual DISPONIBLE -> RESERVADO
-        // =====================================================================
         if (estadoActual == EstadoVehiculo.DISPONIBLE && estadoDestino == EstadoVehiculo.RESERVADO) {
             log.warn("Intento manual bloqueado: Transición de DISPONIBLE a RESERVADO para el vehículo ID {}", id);
             throw new BusinessException(
                     "NO es posible pasar un vehiculo de DISPONIBLE a RESERVADO primero cree una reserva y confirmela");
         }
 
-        // Aplicamos el nuevo estado al vehículo.
         vehiculo.setEstadoVehiculo(estadoDestino);
 
         if (estadoActual == EstadoVehiculo.EN_MANTENIMIENTO && estadoDestino == EstadoVehiculo.DISPONIBLE) {
@@ -658,28 +639,15 @@ public class VehicleServiceImpl implements VehicleService {
 
         vehiculo.setActualizadoEn(LocalDateTime.now());
 
-        // 1. Guardamos el vehículo de inmediato para proteger la BD.
-        Vehiculo vehiculoActualizado = vehicleRepository.saveAndFlush(vehiculo);
-
         String motivoAuditoria = motivoCambio;
 
-        // =====================================================================
-        // CANDADO DE SEGURIDAD Y CASCADA DE EMERGENCIA
-        // =====================================================================
-        // Ahora se ejecuta para AMBOS estados de emergencia
         if (estadoDestino == EstadoVehiculo.FUERA_DE_SERVICIO || estadoDestino == EstadoVehiculo.EN_MANTENIMIENTO) {
-
-            // 2. Ejecutamos la cascada profunda usando el nuevo método dinámico
-            motivoAuditoria = procesarCascadaEmergencia(vehiculoActualizado, estadoActual, estadoDestino, motivoCambio);
-
-            // 3. Reafirmamos por seguridad que el estado es el correcto
-            // (Para que ninguna compensación de la Saga devuelva el camión a DISPONIBLE
-            // accidentalmente)
-            vehiculoActualizado.setEstadoVehiculo(estadoDestino);
-            vehicleRepository.saveAndFlush(vehiculoActualizado);
+            motivoAuditoria = procesarCascadaEmergencia(vehiculo, estadoActual, estadoDestino, motivoCambio);
+            // Reafirmamos el estado por si la compensación de saga intentó liberar el vehículo.
+            vehiculo.setEstadoVehiculo(estadoDestino);
         }
 
-        // 4. AUDITORÍA (Audit Trail)
+        Vehiculo vehiculoActualizado = vehicleRepository.save(vehiculo);
         registrarHistorial(vehiculoActualizado, estadoActual, estadoDestino, motivoAuditoria, servicioOrigen, null);
 
         log.info("Cambio de estado exitoso: {} -> {} | Vehículo ID: {}", estadoActual, estadoDestino, id);
@@ -944,79 +912,4 @@ public class VehicleServiceImpl implements VehicleService {
         historialEstadoRepository.save(historial);
     }
 
-    // =========================================================================
-    // MÉTODOS AUXILIARES DE VALIDACIÓN DE INTEGRIDAD DE DATOS
-    // =========================================================================
-
-    // Método privado: Solo puede ser invocado desde dentro de esta misma clase
-    // Service.
-    // Centraliza y encapsula las reglas estrictas de validación para nuevos
-    // registros ("CREATE").
-    private void validarUnicidadParaCreacion(VehicleRequest request) {
-        // REGLA DE NEGOCIO: Prevención absoluta de clones en el inventario físico.
-
-        // 1. VALIDACIÓN DE PLACA:
-        // Consulta ágil a la BD (retorna un simple boolean, no la entidad completa).
-        // 'IgnoreCase' asegura que "ABC123" y "abc123" se consideren el mismo registro,
-        // previniendo contaminación de datos.
-        if (vehicleRepository.existsByNumeroPlacaIgnoreCase(request.numeroPlaca())) {
-            // Si la placa ya existe, aborta la transacción inmediatamente lanzando un error
-            // 409 (Conflict).
-            // Identifica exactamente qué campo causó el conflicto para retroalimentar al
-            // usuario en el Frontend.
-            throw new DuplicateResourceException("Vehículo", "numeroPlaca", request.numeroPlaca());
-        }
-
-        // 2. VALIDACIÓN DE CHASIS (VIN):
-        // Verifica la huella dactilar física del camión. Un chasis duplicado indica
-        // fraude o error de digitación grave.
-        if (vehicleRepository.existsByNumeroChasisIgnoreCase(request.numeroChasis())) {
-            // Detiene el flujo con una excepción clara y específica.
-            throw new DuplicateResourceException("Vehículo", "numeroChasis", request.numeroChasis());
-        }
-
-        // 3. VALIDACIÓN DE MOTOR:
-        // Protege la integridad legal del bloque del motor, evitando que dos vehículos
-        // compartan el mismo serial.
-        if (vehicleRepository.existsByNumeroMotorIgnoreCase(request.numeroMotor())) {
-            // Dispara el error detallando el campo exacto del conflicto.
-            throw new DuplicateResourceException("Vehículo", "numeroMotor", request.numeroMotor());
-        }
-    }
-
-    // Método privado que aplica el patrón de "Auto-Exclusión" vital para las
-    // ediciones ("UPDATE").
-    private void validarUnicidadParaActualizacion(UUID idVehiculo, VehicleUpdateRequest request) {
-        // REGLA DE NEGOCIO: Proteger contra duplicados, pero reconociendo la identidad
-        // propia del vehículo.
-        // Permite que un vehículo "conserve" sus propios datos únicos sin que el
-        // sistema lance un falso error de duplicidad.
-
-        // 1. VALIDACIÓN DE PLACA CON AUTO-EXCLUSIÓN:
-        // Spring Data JPA traduce 'AndIdVehiculoNot' a SQL como: WHERE placa = ? AND id
-        // != ?
-        // Esto significa: "¿Hay alguien MÁS en la base de datos con esta placa que NO
-        // sea yo?"
-        if (vehicleRepository.existsByNumeroPlacaIgnoreCaseAndIdVehiculoNot(request.numeroPlaca(), idVehiculo)) {
-            // Si la respuesta es sí (un tercero tiene la placa), lanzamos el error de
-            // colisión de datos.
-            throw new DuplicateResourceException("Vehículo", "numeroPlaca", request.numeroPlaca());
-        }
-
-        // 2. VALIDACIÓN DE CHASIS CON AUTO-EXCLUSIÓN:
-        // Verifica si el serial del chasis que intentamos guardar ya está apropiado por
-        // otro activo distinto en la flota.
-        if (vehicleRepository.existsByNumeroChasisIgnoreCaseAndIdVehiculoNot(request.numeroChasis(), idVehiculo)) {
-            // Lanza el rechazo de actualización por conflicto de identificador físico.
-            throw new DuplicateResourceException("Vehículo", "numeroChasis", request.numeroChasis());
-        }
-
-        // 3. VALIDACIÓN DE MOTOR CON AUTO-EXCLUSIÓN:
-        // Comprueba si el número de motor proporcionado ya está vinculado a un UUID de
-        // vehículo diferente.
-        if (vehicleRepository.existsByNumeroMotorIgnoreCaseAndIdVehiculoNot(request.numeroMotor(), idVehiculo)) {
-            // Falla la transacción indicando que el motor le pertenece a un tercero.
-            throw new DuplicateResourceException("Vehículo", "numeroMotor", request.numeroMotor());
-        }
-    }
 }

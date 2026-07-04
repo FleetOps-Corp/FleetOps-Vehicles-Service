@@ -15,7 +15,6 @@ import com.fleetops.vehicles.dto.response.AgendaReservaResponse;
 import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.dto.response.SagaResponse;
 import com.fleetops.vehicles.repositories.*;
-import com.fleetops.vehicles.services.domain.AvailabilityPolicy;
 import com.fleetops.vehicles.services.domain.IdempotencyValidator;
 
 // Importaciones de Lombok para reducir código repetitivo y facilitar el logging.
@@ -64,7 +63,6 @@ public class SagaServiceImpl implements SagaService {
     // Servicios de Dominio: Contienen la lógica de negocio pura, fuera de la base
     // de datos.
     private final IdempotencyValidator idempotencyValidator;
-    private final AvailabilityPolicy availabilityPolicy;
 
     // ─────────────────────────────────────────────────────────────────────────────
     // MÉTODO: iniciarReserva (Vía ID)
@@ -132,12 +130,6 @@ public class SagaServiceImpl implements SagaService {
             throw new ReservaConflictException(mensajeError, agenda);
         }
 
-        // Validación de identificadores externos únicos
-        UUID idAsignacion = UUID.fromString(request.idAsignacionExt());
-        if (reservaRepository.existsByIdAsignacionExt(idAsignacion)) {
-            throw new BusinessException("UUID de asignaciones duplicado, use uno diferente.");
-        }
-
         // 4. Validar Solapamiento de Fechas
         List<ReservaVehiculo> conflictos = reservaRepository.obtenerReservasConflictivas(
                 vehiculo.getIdVehiculo(),
@@ -183,36 +175,18 @@ public class SagaServiceImpl implements SagaService {
     }
 
     // Método privado central que contiene toda la lógica de creación de la reserva.
+    // Las validaciones de SOAT/RTM, disponibilidad y solapamiento ya se hicieron en validarYProcesarReserva.
     private ReservaResponse procesarCreacionReserva(Vehiculo vehiculo, ReservaRequest request) {
 
-        if (!availabilityPolicy.isAvailableForReservation(vehiculo)) {
-            throw new BusinessException("El vehículo no cumple las políticas operativas para ser reservado.");
-        }
-
-        boolean existeSolapamiento = reservaRepository.existeReservaEnRango(
-                vehiculo.getIdVehiculo(),
-                List.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA),
-                request.fechaFin(),
-                request.fechaInicio());
-
-        if (existeSolapamiento) {
-            throw new BusinessException("El vehículo ya tiene una reserva que se cruza con las fechas solicitadas.");
-        }
-
-        // Creación del "Expediente" de la Saga (Bitácora de transacción distribuida).
         SagaVehiculo saga = new SagaVehiculo();
         saga.setVehiculo(vehiculo);
         saga.setTipoOperacion("RESERVA_VEHICULO");
-        saga.setEstadoSaga(EstadoSaga.INICIADA);
+        saga.setEstadoSaga(EstadoSaga.EN_PROGRESO);
         saga.setClaveIdempotencia(request.claveIdempotencia());
         saga.setPayload(request.toString());
         saga.setCreadoEn(LocalDateTime.now());
         saga = sagaRepository.save(saga);
 
-        saga.setEstadoSaga(EstadoSaga.EN_PROGRESO);
-        sagaRepository.save(saga);
-
-        // Creamos el objeto Reserva, que es el contrato formal del servicio.
         ReservaVehiculo reserva = new ReservaVehiculo();
         reserva.setVehiculo(vehiculo);
         reserva.setSagaVehiculo(saga);
@@ -225,9 +199,7 @@ public class SagaServiceImpl implements SagaService {
         reserva.setCreadoEn(LocalDateTime.now());
         reserva = reservaRepository.save(reserva);
 
-        log.info(
-                "Proceso de reserva EN_PROGRESO. Reserva creada (Vehículo aguardando tiempo de inicio). Trámite ID: {}",
-                saga.getIdSaga());
+        log.info("Reserva creada EN_PROGRESO. Trámite ID: {}", saga.getIdSaga());
 
         return toReservaResponse(reserva);
     }
@@ -518,7 +490,7 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findAllReservas(Pageable pageable) {
-        log.info("Consultando el historial global paginado de todas las reservas.");
+        log.debug("Consultando el historial global paginado de todas las reservas.");
         Page<ReservaVehiculo> paginaReservas = reservaRepository.findAllByOrderByCreadoEnDesc(pageable);
         return paginaReservas.map(dtoMapperReserva::toDto);
     }
@@ -526,7 +498,7 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasPendientes(Pageable pageable) {
-        log.info("Consultando la bandeja de reservas en estado PENDIENTE.");
+        log.debug("Consultando la bandeja de reservas en estado PENDIENTE.");
         Page<ReservaVehiculo> paginaPendientes = reservaRepository
                 .findAllByEstadoReservaOrderByCreadoEnDesc(EstadoReserva.PENDIENTE, pageable);
         return paginaPendientes.map(dtoMapperReserva::toDto);
@@ -535,7 +507,7 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasConfirmadas(Pageable pageable) {
-        log.info("Consultando la bandeja de reservas en estado CONFIRMADA.");
+        log.debug("Consultando la bandeja de reservas en estado CONFIRMADA.");
         Page<ReservaVehiculo> paginaConfirmadas = reservaRepository
                 .findAllByEstadoReservaOrderByCreadoEnDesc(EstadoReserva.CONFIRMADA, pageable);
         return paginaConfirmadas.map(dtoMapperReserva::toDto);
@@ -544,7 +516,7 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasFallidas(Pageable pageable) {
-        log.info("Consultando la bandeja de reservas en estado FALLIDA.");
+        log.debug("Consultando la bandeja de reservas en estado FALLIDA.");
         Page<ReservaVehiculo> paginaFallidas = reservaRepository
                 .findAllByEstadoReservaOrderByCreadoEnDesc(EstadoReserva.FALLIDA, pageable);
         return paginaFallidas.map(dtoMapperReserva::toDto);
@@ -553,7 +525,7 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasCanceladas(Pageable pageable) {
-        log.info("Consultando la bandeja de reservas en estado CANCELADA.");
+        log.debug("Consultando la bandeja de reservas en estado CANCELADA.");
         Page<ReservaVehiculo> paginaCanceladas = reservaRepository
                 .findAllByEstadoReservaOrderByCreadoEnDesc(EstadoReserva.CANCELADA, pageable);
         return paginaCanceladas.map(dtoMapperReserva::toDto);
@@ -569,7 +541,7 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasByPlaca(String placa, Pageable pageable) {
-        log.info("Consultando historial de reservas para el vehículo con placa: {}", placa);
+        log.debug("Consultando historial de reservas para el vehículo con placa: {}", placa);
         Page<ReservaVehiculo> paginaReservas = reservaRepository
                 .findByVehiculo_NumeroPlacaIgnoreCaseOrderByCreadoEnDesc(placa, pageable);
         return paginaReservas.map(dtoMapperReserva::toDto);
@@ -578,7 +550,7 @@ public class SagaServiceImpl implements SagaService {
     @Override
     @Transactional(readOnly = true)
     public Page<ReservaResponse> findReservasByPlacaAndEstado(String placa, EstadoReserva estado, Pageable pageable) {
-        log.info("Consultando reservas para el vehículo con placa: {} filtradas por estado: {}", placa, estado);
+        log.debug("Consultando reservas para el vehículo con placa: {} filtradas por estado: {}", placa, estado);
         Page<ReservaVehiculo> paginaReservas = reservaRepository
                 .findByVehiculo_NumeroPlacaIgnoreCaseAndEstadoReservaOrderByCreadoEnDesc(placa, estado, pageable);
         return paginaReservas.map(dtoMapperReserva::toDto);
