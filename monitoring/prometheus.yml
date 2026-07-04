@@ -1,0 +1,19 @@
+# Dojo Prometheus & Grafana — scrape targets en EC2 (Elastic IP)
+# Prometheus corre en local; editar targets si cambia la IP del servidor.
+
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: ec2-node
+    static_configs:
+      - targets: ['54.226.57.71:19100']
+
+  - job_name: ec2-docker
+    static_configs:
+      - targets: ['54.226.57.71:18080']
+
+  - job_name: api-metrics
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['54.226.57.71:18001']
