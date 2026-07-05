@@ -1,12 +1,16 @@
 // Define la "carpeta" lógica donde reside este contrato, parte de la capa de servicios de aplicación.
 package com.fleetops.vehicles.services.application;
 
+// Importar DTOs para manejo de eventos con kafka
+import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleRequestEvent;
 // Importa los DTOs de petición y respuesta, garantizando que el servicio solo hable con objetos limpios.
 import com.fleetops.vehicles.dto.request.ReservaRequest;
 import com.fleetops.vehicles.dto.request.UpdateReservaDatesRequest;
 import com.fleetops.vehicles.dto.response.AgendaReservaResponse;
 import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.dto.response.SagaResponse;
+import com.fleetops.vehicles.dto.response.VehicleAssignmentResult;
+
 // Importa las entidades necesarias para el modelo de dominio.
 import com.fleetops.vehicles.models.entities.EstadoReserva;
 import com.fleetops.vehicles.models.entities.ReservaVehiculo;
@@ -122,5 +126,16 @@ public interface SagaService {
     // Saga.
     Page<SagaResponse> findSagasByPlacaAndEstado(String placa, com.fleetops.vehicles.models.entities.EstadoSaga estado,
             Pageable pageable);
+
+    /**
+     * Procesa una solicitud de asignación de vehículo proveniente del
+     * microservicio de Asignaciones mediante Kafka.
+     *
+     * @param event Evento recibido desde Kafka.
+     * @return Resultado del procesamiento de la solicitud.
+     */
+    VehicleAssignmentResult procesarSolicitudAsignacion(
+        VehicleRequestEvent event
+    );
 
 }
