@@ -25,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 
 // Importaciones de Spring para paginación, seguridad y transacciones.
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -624,7 +625,28 @@ public class SagaServiceImpl implements SagaService {
     public VehicleAssignmentResult procesarSolicitudAsignacion(
         VehicleRequestEvent event) {
 
-        throw new UnsupportedOperationException(
-            "Pendiente implementación");
+        Page<Vehiculo> vehiculos = vehicleRepository
+            .findByEstadoVehiculoAndActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase(
+                    EstadoVehiculo.DISPONIBLE,
+                    event.getTipoVehiculo(),
+                    PageRequest.of(0, 1));
+
+        if (vehiculos.isEmpty()) {
+
+            return VehicleAssignmentResult.builder()
+                    .success(false)
+                    .idAsignacion(event.getIdAsignacion())
+                    .motivo("Sin vehículos disponibles del tipo " + event.getTipoVehiculo())
+                    .build();
+        }
+
+        Vehiculo vehiculo = vehiculos.getContent().getFirst();
+
+        return VehicleAssignmentResult.builder()
+                .success(true)
+                .idAsignacion(event.getIdAsignacion())
+                .idVehiculo(vehiculo.getIdVehiculo())
+                .build();
+
     }
 }
