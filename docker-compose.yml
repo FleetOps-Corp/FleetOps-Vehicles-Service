@@ -53,7 +53,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      SERVER_PORT: ${SERVER_PORT}
+      # Puerto interno del contenedor (siempre 8081). API_HOST_PORT expone otro puerto en el host.
+      SERVER_PORT: "8081"
+      JWT_SECRET: ${JWT_SECRET_KEY}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${DB_NAME}
@@ -72,7 +74,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       JAVA_OPTS: ${JAVA_OPTS:-}
     ports:
-      - "${SERVER_PORT}:8081"
+      - "${API_HOST_PORT:-8081}:8081"
     networks:
       - fleetops-network
     healthcheck:

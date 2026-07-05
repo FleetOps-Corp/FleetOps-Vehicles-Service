@@ -28,10 +28,17 @@ name: CI - FleetOps Vehicles
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches:
+      - main
+      - develop
   pull_request:
-    branches: [ "main", "develop" ]
+    branches:
+      - main
+      - develop
   workflow_dispatch:
+
+# Check name for branch rulesets (must run on default branch at least once):
+#   CI - FleetOps Vehicles / CI Required Check
 
 # Cancela runs anteriores del mismo branch/PR si llega un push nuevo,
 # evitando gastar minutos de CI en builds obsoletos.
@@ -41,7 +48,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Build, Test & Quality Checks
+    name: CI Required Check
     runs-on: ubuntu-latest
 
     # ---------------------------------------------------------------------
