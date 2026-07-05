@@ -16,4 +16,8 @@ public final class KafkaTopics {
     /** Asignaciones → Vehículos: cancelar/liberar una asignación confirmada. */
     public static final String VEHICLE_RELEASE =
             "fleetops.vehiculos.liberar";
+
+    /** Asignaciones → Vehículos: confirmar definitivamente una asignación. */
+    public static final String ASSIGNMENT_COMPLETED =
+        "fleetops.asignaciones.completada";
 }

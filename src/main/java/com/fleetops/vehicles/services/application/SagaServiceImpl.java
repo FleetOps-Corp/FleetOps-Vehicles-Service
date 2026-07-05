@@ -1,18 +1,24 @@
 package com.fleetops.vehicles.services.application;
 
 import com.fleetops.vehicles.exception.BusinessException;
+import com.fleetops.vehicles.exception.ReservaConflictException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
 import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleRequestEvent;
 import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleReleaseEvent;
 import com.fleetops.vehicles.mapper.DtoMapperReserva;
 import com.fleetops.vehicles.mapper.DtoMapperSaga;
 import com.fleetops.vehicles.models.entities.*;
+import com.fleetops.vehicles.dto.request.ReservaRequest;
+import com.fleetops.vehicles.dto.request.UpdateReservaDatesRequest;
+import com.fleetops.vehicles.dto.response.AgendaReservaResponse;
 import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.dto.response.SagaResponse;
 import com.fleetops.vehicles.dto.response.VehicleAssignmentResult;
 import com.fleetops.vehicles.dto.response.VehicleReleaseResult;
 import com.fleetops.vehicles.repositories.*;
 import com.fleetops.vehicles.services.domain.AvailabilityPolicy;
+import com.fleetops.vehicles.services.domain.IdempotencyValidator;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -517,5 +523,46 @@ public class SagaServiceImpl implements SagaService {
         log.info("Reserva {} liberada por evento Kafka (asignación {})", reserva.getIdReserva(), idAsignacion);
 
         return VehicleReleaseResult.processed(idAsignacion, reserva.getIdReserva());
+    }
+
+    public void confirmarReservaPorAsignacion(UUID idAsignacion) {
+
+        ReservaVehiculo reserva = reservaRepository
+                .findByIdAsignacionExt(idAsignacion)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Reserva",
+                                "idAsignacion",
+                                idAsignacion));
+
+        //confirmarReserva(reserva.getIdReserva());
+        SagaVehiculo saga = reserva.getSagaVehiculo();
+
+        if (saga != null && saga.getEstadoSaga() != EstadoSaga.EN_PROGRESO) {
+            throw new BusinessException(
+                    "El proceso de reserva no se encuentra en un estado válido para ser confirmado. Estado actual: "
+                            + saga.getEstadoSaga());
+        }
+
+        reserva.setEstadoReserva(EstadoReserva.CONFIRMADA);
+        reserva.setActualizadoEn(LocalDateTime.now());
+        reservaRepository.save(reserva);
+
+        if (saga != null) {
+            saga.setEstadoSaga(EstadoSaga.COMPLETADA);
+            saga.setActualizadoEn(LocalDateTime.now());
+            sagaRepository.save(saga);
+            log.info(
+                "Saga {} marcada como COMPLETADA.",
+                saga.getIdSaga()
+            );
+        }
+
+        log.info(
+            "Reserva {} confirmada exitosamente para la asignación {}.",
+            reserva.getIdReserva(),
+            idAsignacion
+        );
+
     }
 }
