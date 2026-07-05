@@ -2,9 +2,6 @@
 
 Documento de las mejoras aplicadas al microservicio de vehículos para reducir consultas constantes a la base de datos, N+1 en listados y trabajo redundante en la API REST.
 
-**Alcance:** solo optimizaciones de rendimiento y uso de recursos.  
-**No incluido:** eliminación de JWT/Security (se mantiene para pruebas; otro microservicio se encargará de la autenticación).
-
 ---
 
 ## Resumen
@@ -26,13 +23,13 @@ El servicio ejecutaba jobs programados muy frecuentes, hacía `findAll()` de tod
 
 #### 1. `VehicleStateScheduler.java`
 
-| Job | Antes | Después |
-|-----|-------|---------|
-| `sincronizarEstadosPorAgenda` | Cada 60 s + `findAll()` de vehículos | Cada 60 s + `findAllByEstadoVehiculoAndActivoTrue(RESERVADO)` |
-| `cancelarReservasExpiradas` | Cada **30 s** | Cada **2 min** (`fixedRate = 120000`) |
-| `auditarVencimientoDocumentosLegales` | Cada **60 s** + `findAll()` | **1 vez al día** a las 06:00 (`cron = "0 0 6 * * *"`) + solo activos no `FUERA_DE_SERVICIO` |
+| Job | Antes | Después (ronda 1) | Refactor dominio (2026) |
+|-----|-------|-------------------|-------------------------|
+| `sincronizarEstadosPorAgenda` | Cada 60 s + `findAll()` | Cada 60 s + filtro por `RESERVADO` | **Eliminado** — la ocupación vive en `reservas_vehiculo` |
+| `cancelarReservasExpiradas` | Cada **30 s** | Cada **2 min** | **Eliminado** — asignaciones vía Kafka crean reserva `CONFIRMADA` directa |
+| `auditarVencimientoDocumentosLegales` | Cada **60 s** + `findAll()` | **1 vez al día** a las 06:00 | Sin cambio |
 
-La regla de negocio del timeout de reservas (4 minutos sin confirmar) se mantiene; solo baja la frecuencia de revisión.
+La regla de negocio del timeout de reservas PENDIENTE ya no aplica: las asignaciones se confirman en un solo evento Kafka.
 
 #### 2. `ReservaRepository.java`
 

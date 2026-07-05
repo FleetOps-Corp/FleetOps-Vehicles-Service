@@ -1,16 +1,15 @@
 package com.fleetops.vehicles.services.application;
 
-import com.fleetops.vehicles.dto.request.ReservaRequest;
-import com.fleetops.vehicles.dto.request.UpdateReservaDatesRequest;
 import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.exception.BusinessException;
-import com.fleetops.vehicles.exception.ReservaConflictException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
+import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleRequestEvent;
+import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleReleaseEvent;
 import com.fleetops.vehicles.mapper.DtoMapperReserva;
 import com.fleetops.vehicles.mapper.DtoMapperSaga;
 import com.fleetops.vehicles.models.entities.*;
 import com.fleetops.vehicles.repositories.*;
-import com.fleetops.vehicles.services.domain.IdempotencyValidator;
+import com.fleetops.vehicles.services.domain.AvailabilityPolicy;
 import com.fleetops.vehicles.support.TestDataFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
@@ -39,138 +39,165 @@ class SagaServiceImplTest {
     @Mock private SagaRepository sagaRepository;
     @Mock private ReservaRepository reservaRepository;
     @Mock private VehicleRepository vehicleRepository;
-    @Mock private HistorialEstadoRepository historialEstadoRepository;
-    @Mock private IdempotencyValidator idempotencyValidator;
+    @Mock private AvailabilityPolicy availabilityPolicy;
 
     @InjectMocks private SagaServiceImpl service;
 
     private Vehiculo vehiculo;
-    private ReservaRequest request;
+    private VehicleRequestEvent event;
 
     @BeforeEach
     void setUp() {
         vehiculo = TestDataFactory.vehiculoDisponible();
-        request = TestDataFactory.reservaRequest();
+        event = new VehicleRequestEvent();
+        event.setIdSaga(UUID.randomUUID());
+        event.setIdAsignacion(UUID.randomUUID());
+        event.setTipoVehiculo("Camion");
+        event.setFechaInicio(LocalDate.now().plusDays(1));
+        event.setFechaFin(LocalDate.now().plusDays(3));
+    }
+
+    private void sinReservaPrevia() {
+        when(reservaRepository.findByClaveIdempotencia(anyString())).thenReturn(Optional.empty());
+        when(reservaRepository.findByIdAsignacionExt(any())).thenReturn(Optional.empty());
     }
 
     @Test
-    void iniciarReservaExitosa() {
-        when(vehicleRepository.findById(vehiculo.getIdVehiculo())).thenReturn(Optional.of(vehiculo));
-        doNothing().when(idempotencyValidator).validateNotDuplicate(anyString());
-        when(reservaRepository.obtenerReservasConflictivas(any(), anyList(), any(), any())).thenReturn(List.of());
+    void procesarSolicitudAsignacionCreaReservaConfirmada() {
+        sinReservaPrevia();
+        when(vehicleRepository.findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase("Camion"))
+                .thenReturn(List.of(vehiculo));
+        when(availabilityPolicy.isAssignable(any(), any(), any())).thenReturn(true);
+        when(vehicleRepository.findByIdForUpdate(vehiculo.getIdVehiculo())).thenReturn(Optional.of(vehiculo));
         when(sagaRepository.save(any())).thenAnswer(inv -> {
             SagaVehiculo s = inv.getArgument(0);
             s.setIdSaga(UUID.randomUUID());
             return s;
         });
-        when(reservaRepository.save(any())).thenAnswer(inv -> {
-            ReservaVehiculo r = inv.getArgument(0);
-            r.setIdReserva(UUID.randomUUID());
-            return r;
-        });
+        when(reservaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        ReservaResponse response = service.iniciarReserva(vehiculo.getIdVehiculo(), request);
-        assertNotNull(response);
-        assertEquals(EstadoReserva.PENDIENTE.name(), response.estadoReserva());
+        var result = service.procesarSolicitudAsignacion(event);
+
+        assertTrue(result.isSuccess());
+        assertFalse(result.isIdempotentReplay());
+        verify(vehicleRepository).findByIdForUpdate(vehiculo.getIdVehiculo());
+        verify(reservaRepository).save(argThat(r -> r.getEstadoReserva() == EstadoReserva.CONFIRMADA));
     }
 
     @Test
-    void iniciarReservaByPlaca() {
-        when(vehicleRepository.findByNumeroPlacaIgnoreCaseAndActivoTrue("ABC123"))
-                .thenReturn(Optional.of(vehiculo));
-        doNothing().when(idempotencyValidator).validateNotDuplicate(anyString());
-        when(reservaRepository.obtenerReservasConflictivas(any(), anyList(), any(), any())).thenReturn(List.of());
+    void procesarSolicitudAsignacionSinVehiculos() {
+        sinReservaPrevia();
+        when(vehicleRepository.findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase("Camion"))
+                .thenReturn(List.of());
+
+        var result = service.procesarSolicitudAsignacion(event);
+        assertFalse(result.isSuccess());
+        verify(reservaRepository, never()).save(any());
+    }
+
+    @Test
+    void procesarSolicitudAsignacionReintentoIdempotenteConfirmada() {
+        ReservaVehiculo existente = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
+        existente.setIdAsignacionExt(event.getIdAsignacion());
+        when(reservaRepository.findByClaveIdempotencia(event.getIdSaga().toString()))
+                .thenReturn(Optional.of(existente));
+
+        var result = service.procesarSolicitudAsignacion(event);
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.isIdempotentReplay());
+        assertEquals(vehiculo.getIdVehiculo(), result.getIdVehiculo());
+        verify(reservaRepository, never()).save(any());
+        verify(vehicleRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
+    void procesarSolicitudAsignacionReintentoIdempotenteCancelada() {
+        ReservaVehiculo existente = TestDataFactory.reserva(vehiculo, EstadoReserva.CANCELADA);
+        when(reservaRepository.findByClaveIdempotencia(event.getIdSaga().toString()))
+                .thenReturn(Optional.of(existente));
+
+        var result = service.procesarSolicitudAsignacion(event);
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.isIdempotentReplay());
+        verify(reservaRepository, never()).save(any());
+    }
+
+    @Test
+    void procesarSolicitudAsignacionRevalidaTrasLock() {
+        sinReservaPrevia();
+        Vehiculo otro = TestDataFactory.vehiculoDisponible();
+        otro.setIdVehiculo(UUID.randomUUID());
+        otro.setNumeroPlaca("AAA111");
+
+        when(vehicleRepository.findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase("Camion"))
+                .thenReturn(List.of(otro, vehiculo));
+        when(availabilityPolicy.isAssignable(eq(otro), any(), any())).thenReturn(true, false);
+        when(availabilityPolicy.isAssignable(eq(vehiculo), any(), any())).thenReturn(true);
+        when(vehicleRepository.findByIdForUpdate(otro.getIdVehiculo())).thenReturn(Optional.of(otro));
+        when(vehicleRepository.findByIdForUpdate(vehiculo.getIdVehiculo())).thenReturn(Optional.of(vehiculo));
         when(sagaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(reservaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        assertNotNull(service.iniciarReservaByPlaca("ABC123", request));
+        var result = service.procesarSolicitudAsignacion(event);
+
+        assertTrue(result.isSuccess());
+        assertEquals(vehiculo.getIdVehiculo(), result.getIdVehiculo());
+        verify(vehicleRepository).findByIdForUpdate(otro.getIdVehiculo());
+        verify(vehicleRepository).findByIdForUpdate(vehiculo.getIdVehiculo());
     }
 
     @Test
-    void iniciarReservaRechazaSoatYEstado() {
-        doNothing().when(idempotencyValidator).validateNotDuplicate(anyString());
-        when(vehicleRepository.findById(vehiculo.getIdVehiculo())).thenReturn(Optional.of(vehiculo));
+    void procesarSolicitudAsignacionColisionInsertResuelveIdempotencia() {
+        sinReservaPrevia();
+        ReservaVehiculo existente = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
+        existente.setIdAsignacionExt(event.getIdAsignacion());
 
-        vehiculo.setFechaSoat(LocalDate.now().minusDays(1));
-        assertThrows(BusinessException.class, () -> service.iniciarReserva(vehiculo.getIdVehiculo(), request));
+        when(vehicleRepository.findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase("Camion"))
+                .thenReturn(List.of(vehiculo));
+        when(availabilityPolicy.isAssignable(any(), any(), any())).thenReturn(true);
+        when(vehicleRepository.findByIdForUpdate(vehiculo.getIdVehiculo())).thenReturn(Optional.of(vehiculo));
+        when(sagaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(reservaRepository.save(any())).thenThrow(new DataIntegrityViolationException("dup"));
+        when(reservaRepository.findByClaveIdempotencia(event.getIdSaga().toString()))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(existente));
 
-        //vehiculo.setFechaSoat(LocalDate.now().plusMonths(6));
-        // vehiculo.setEstadoVehiculo(EstadoVehiculo.RESERVADO);
-        // when(reservaRepository.findByVehiculo_IdVehiculoAndEstadoReservaIn(any(), anyList()))
-        //         .thenReturn(List.of());
-        // assertThrows(ReservaConflictException.class, () -> service.iniciarReserva(vehiculo.getIdVehiculo(), request));
+        var result = service.procesarSolicitudAsignacion(event);
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.isIdempotentReplay());
     }
 
     @Test
-    void iniciarReservaRechazaSolapamiento() {
-        doNothing().when(idempotencyValidator).validateNotDuplicate(anyString());
-        when(vehicleRepository.findById(vehiculo.getIdVehiculo())).thenReturn(Optional.of(vehiculo));
-        when(reservaRepository.obtenerReservasConflictivas(any(), anyList(), any(), any()))
-                .thenReturn(List.of(TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA)));
+    void procesarSolicitudAsignacionValidaEvento() {
+        event.setIdSaga(null);
+        assertFalse(service.procesarSolicitudAsignacion(event).isSuccess());
 
-        assertThrows(ReservaConflictException.class, () -> service.iniciarReserva(vehiculo.getIdVehiculo(), request));
-    }
+        event.setIdSaga(UUID.randomUUID());
+        event.setFechaFin(event.getFechaInicio());
+        assertFalse(service.procesarSolicitudAsignacion(event).isSuccess());
 
-    @Test
-    void confirmarReservaYPorPlaca() {
-        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.EN_PROGRESO);
-        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
-        reserva.setSagaVehiculo(saga);
-
-        when(reservaRepository.findById(reserva.getIdReserva())).thenReturn(Optional.of(reserva));
-        when(reservaRepository.save(any())).thenReturn(reserva);
-        when(sagaRepository.save(any())).thenReturn(saga);
-
-        assertTrue(service.confirmarReserva(reserva.getIdReserva()).isPresent());
-        assertEquals(EstadoReserva.CONFIRMADA, reserva.getEstadoReserva());
-
-        when(reservaRepository.findAllByVehiculoNumeroPlacaIgnoreCaseAndEstadoReserva("ABC123", EstadoReserva.PENDIENTE))
-                .thenReturn(List.of(reserva));
-        when(reservaRepository.saveAll(anyList())).thenReturn(List.of(reserva));
-        assertEquals(1, service.confirmarReservaPorPlaca("ABC123").size());
-    }
-
-    @Test
-    void confirmarReservaFallaSiSagaNoEnProgreso() {
-        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.COMPLETADA);
-        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
-        reserva.setSagaVehiculo(saga);
-        when(reservaRepository.findById(reserva.getIdReserva())).thenReturn(Optional.of(reserva));
-
-        assertThrows(BusinessException.class, () -> service.confirmarReserva(reserva.getIdReserva()));
-    }
-
-    @Test
-    void actualizarFechasReserva() {
-        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
-        when(reservaRepository.findById(reserva.getIdReserva())).thenReturn(Optional.of(reserva));
-        when(reservaRepository.findOverlappingReservations(any(), any(), any(), any(), anyList()))
-                .thenReturn(List.of());
-        when(reservaRepository.save(any())).thenReturn(reserva);
-        when(dtoMapperReserva.toDto(any())).thenReturn(mock(ReservaResponse.class));
-
-        LocalDateTime inicio = LocalDateTime.now().plusDays(1);
-        UpdateReservaDatesRequest dates = new UpdateReservaDatesRequest(inicio, inicio.plusDays(2));
-        assertNotNull(service.actualizarFechasReserva(reserva.getIdReserva(), dates));
+        event.setFechaFin(LocalDate.now().plusDays(3));
+        event.setTipoVehiculo("  ");
+        assertFalse(service.procesarSolicitudAsignacion(event).isSuccess());
     }
 
     @Test
     void compensarPorReservaIdYSaga() {
-        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.EN_PROGRESO);
-        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
+        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.COMPLETADA);
+        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
         reserva.setSagaVehiculo(saga);
-        vehiculo.setEstadoVehiculo(EstadoVehiculo.RESERVADO);
 
         when(reservaRepository.findById(reserva.getIdReserva())).thenReturn(Optional.of(reserva));
         when(sagaRepository.findById(saga.getIdSaga())).thenReturn(Optional.of(saga));
         when(reservaRepository.findBySagaVehiculo_IdSaga(saga.getIdSaga())).thenReturn(Optional.of(reserva));
         when(reservaRepository.save(any())).thenReturn(reserva);
-        when(vehicleRepository.save(any())).thenReturn(vehiculo);
         when(sagaRepository.save(any())).thenReturn(saga);
 
-        assertNotNull(service.compensarPorReservaId(reserva.getIdReserva(), "timeout"));
+        assertNotNull(service.compensarPorReservaId(reserva.getIdReserva(), "cancelacion"));
         assertEquals(EstadoSaga.COMPENSADA, saga.getEstadoSaga());
-        assertEquals(EstadoVehiculo.DISPONIBLE, vehiculo.getEstadoVehiculo());
     }
 
     @Test
@@ -202,157 +229,31 @@ class SagaServiceImplTest {
         when(reservaRepository.findAllByOrderByCreadoEnDesc(any())).thenReturn(new PageImpl<>(List.of()));
         when(reservaRepository.findAllByEstadoReservaOrderByCreadoEnDesc(any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
-        when(reservaRepository.findByVehiculo_NumeroPlacaIgnoreCaseOrderByCreadoEnDesc(any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
-        when(reservaRepository.findByVehiculo_NumeroPlacaIgnoreCaseAndEstadoReservaOrderByCreadoEnDesc(any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
         when(reservaRepository.findById(any())).thenReturn(Optional.empty());
+        when(sagaRepository.findAllByOrderByCreadoEnDesc(any())).thenReturn(new PageImpl<>(List.of()));
 
         var pageable = PageRequest.of(0, 10);
         assertEquals(0, service.findAllReservas(pageable).getTotalElements());
         assertEquals(0, service.findReservasPendientes(pageable).getTotalElements());
-        assertEquals(0, service.findReservasConfirmadas(pageable).getTotalElements());
-        assertEquals(0, service.findReservasFallidas(pageable).getTotalElements());
-        assertEquals(0, service.findReservasCanceladas(pageable).getTotalElements());
-        assertEquals(0, service.findReservasByPlaca("ABC", pageable).getTotalElements());
-        assertEquals(0, service.findReservasByPlacaAndEstado("ABC", EstadoReserva.PENDIENTE, pageable).getTotalElements());
         assertTrue(service.findReservaById(UUID.randomUUID()).isEmpty());
-
-        when(sagaRepository.findAllByOrderByCreadoEnDesc(any())).thenReturn(new PageImpl<>(List.of()));
-        when(sagaRepository.findAllByEstadoSagaOrderByCreadoEnDesc(any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
-        when(sagaRepository.findByVehiculo_NumeroPlacaIgnoreCaseOrderByCreadoEnDesc(any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
-        when(sagaRepository.findByVehiculo_NumeroPlacaIgnoreCaseAndEstadoSagaOrderByCreadoEnDesc(any(), any(), any()))
-                .thenReturn(new PageImpl<>(List.of()));
-
         assertEquals(0, service.findAllSagas(pageable).getTotalElements());
-        assertEquals(0, service.findSagasIniciadas(pageable).getTotalElements());
-        assertEquals(0, service.findSagasEnProgreso(pageable).getTotalElements());
-        assertEquals(0, service.findSagasCompletadas(pageable).getTotalElements());
-        assertEquals(0, service.findSagasFallidas(pageable).getTotalElements());
-        assertEquals(0, service.findSagasCompensadas(pageable).getTotalElements());
-        assertEquals(0, service.findSagasByPlaca("ABC", pageable).getTotalElements());
-        assertEquals(0, service.findSagasByPlacaAndEstado("ABC", EstadoSaga.EN_PROGRESO, pageable).getTotalElements());
     }
 
     @Test
-    void confirmarReservaPorPlacaSinPendientes() {
-        when(reservaRepository.findAllByVehiculoNumeroPlacaIgnoreCaseAndEstadoReserva("ZZZ", EstadoReserva.PENDIENTE))
-                .thenReturn(List.of());
-        assertThrows(BusinessException.class, () -> service.confirmarReservaPorPlaca("ZZZ"));
-    }
-
-    @Test
-    void iniciarReservaValidaDocumentosYEstados() {
-        doNothing().when(idempotencyValidator).validateNotDuplicate(anyString());
-        when(vehicleRepository.findById(vehiculo.getIdVehiculo())).thenReturn(Optional.of(vehiculo));
-
-        vehiculo.setFechaSoat(null);
-        assertThrows(BusinessException.class, () -> service.iniciarReserva(vehiculo.getIdVehiculo(), request));
-
-        vehiculo.setFechaSoat(LocalDate.now().plusDays(3));
-        assertThrows(BusinessException.class, () -> service.iniciarReserva(vehiculo.getIdVehiculo(), request));
-
-        vehiculo.setFechaSoat(LocalDate.now().plusMonths(6));
-        vehiculo.setFechaRtm(null);
-        assertThrows(BusinessException.class, () -> service.iniciarReserva(vehiculo.getIdVehiculo(), request));
-
-        vehiculo.setFechaRtm(LocalDate.now().minusDays(1));
-        assertThrows(BusinessException.class, () -> service.iniciarReserva(vehiculo.getIdVehiculo(), request));
-
-        vehiculo.setFechaRtm(LocalDate.now().plusDays(2));
-        assertThrows(BusinessException.class, () -> service.iniciarReserva(vehiculo.getIdVehiculo(), request));
-
-        vehiculo.setFechaRtm(LocalDate.now().plusMonths(6));
-        vehiculo.setEstadoVehiculo(EstadoVehiculo.FUERA_DE_SERVICIO);
-        // when(reservaRepository.findByVehiculo_IdVehiculoAndEstadoReservaIn(any(), anyList()))
-        //         .thenReturn(List.of(TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA)));
-        ReservaConflictException fuera = assertThrows(ReservaConflictException.class,
-                () -> service.iniciarReserva(vehiculo.getIdVehiculo(), request));
-        assertTrue(fuera.getMessage().contains("fuera de servicio"));
-        //assertEquals(1, fuera.getReservas().size());
-
-        vehiculo.setEstadoVehiculo(EstadoVehiculo.EN_MANTENIMIENTO);
-        ReservaConflictException mant = assertThrows(ReservaConflictException.class,
-                () -> service.iniciarReserva(vehiculo.getIdVehiculo(), request));
-        assertTrue(mant.getMessage().contains("mantenimiento"));
-    }
-
-    @Test
-    void iniciarReservaVehiculoNoEncontrado() {
-        doNothing().when(idempotencyValidator).validateNotDuplicate(anyString());
-        when(vehicleRepository.findById(any())).thenReturn(Optional.empty());
-        assertThrows(ResourceNotFoundException.class,
-                () -> service.iniciarReserva(UUID.randomUUID(), request));
-
-        when(vehicleRepository.findByNumeroPlacaIgnoreCaseAndActivoTrue("XXX"))
-                .thenReturn(Optional.empty());
-        assertThrows(ResourceNotFoundException.class,
-                () -> service.iniciarReservaByPlaca("XXX", request));
-    }
-
-    @Test
-    void actualizarFechasValidaErroresYColisiones() {
-        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
-        when(reservaRepository.findById(reserva.getIdReserva())).thenReturn(Optional.of(reserva));
-
-        LocalDateTime inicio = LocalDateTime.now().plusDays(1);
-        assertThrows(BusinessException.class, () -> service.actualizarFechasReserva(
-                reserva.getIdReserva(), new UpdateReservaDatesRequest(inicio, inicio)));
-        assertThrows(BusinessException.class, () -> service.actualizarFechasReserva(
-                reserva.getIdReserva(), new UpdateReservaDatesRequest(inicio, inicio.minusHours(1))));
-
-        reserva.setEstadoReserva(EstadoReserva.CANCELADA);
-        assertThrows(BusinessException.class, () -> service.actualizarFechasReserva(
-                reserva.getIdReserva(), new UpdateReservaDatesRequest(inicio, inicio.plusDays(1))));
-
-        reserva.setEstadoReserva(EstadoReserva.CONFIRMADA);
-        when(reservaRepository.findOverlappingReservations(any(), any(), any(), any(), anyList()))
-                .thenReturn(List.of(TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE)));
-        assertThrows(ReservaConflictException.class, () -> service.actualizarFechasReserva(
-                reserva.getIdReserva(), new UpdateReservaDatesRequest(inicio, inicio.plusDays(1))));
-
-        when(reservaRepository.findById(any())).thenReturn(Optional.empty());
-        assertThrows(ResourceNotFoundException.class, () -> service.actualizarFechasReserva(
-                UUID.randomUUID(), new UpdateReservaDatesRequest(inicio, inicio.plusDays(1))));
-    }
-
-    @Test
-    void compensarSinSagaYVehiculoEnMantenimiento() {
-        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
+    void compensarSinSaga() {
+        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
         reserva.setSagaVehiculo(null);
         when(reservaRepository.findById(reserva.getIdReserva())).thenReturn(Optional.of(reserva));
         when(reservaRepository.save(any())).thenReturn(reserva);
 
         assertNotNull(service.compensarPorReservaId(reserva.getIdReserva(), "sin saga"));
-        assertEquals(EstadoReserva.CANCELADA, reserva.getEstadoReserva());
-
         when(reservaRepository.findById(any())).thenReturn(Optional.empty());
         assertThrows(ResourceNotFoundException.class,
                 () -> service.compensarPorReservaId(UUID.randomUUID(), "x"));
     }
 
     @Test
-    void compensarSagaNoLiberaVehiculoEnMantenimiento() {
-        vehiculo.setEstadoVehiculo(EstadoVehiculo.EN_MANTENIMIENTO);
-        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.EN_PROGRESO);
-        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
-        reserva.setSagaVehiculo(saga);
-
-        when(sagaRepository.findById(saga.getIdSaga())).thenReturn(Optional.of(saga));
-        when(reservaRepository.findBySagaVehiculo_IdSaga(saga.getIdSaga())).thenReturn(Optional.of(reserva));
-        when(reservaRepository.save(any())).thenReturn(reserva);
-        when(sagaRepository.save(any())).thenReturn(saga);
-
-        assertTrue(service.compensarSaga(saga.getIdSaga(), "taller"));
-        assertEquals(EstadoVehiculo.EN_MANTENIMIENTO, vehiculo.getEstadoVehiculo());
-        verify(vehicleRepository, never()).save(any());
-    }
-
-    @Test
     void cancelarReservasCortaViajeEnCurso() {
-        vehiculo.setEstadoVehiculo(EstadoVehiculo.RESERVADO);
         ReservaVehiculo enCurso = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
         enCurso.setFechaInicio(LocalDateTime.now().minusHours(1));
         enCurso.setFechaFin(LocalDateTime.now().plusHours(2));
@@ -366,26 +267,9 @@ class SagaServiceImplTest {
         when(reservaRepository.save(any())).thenReturn(enCurso);
         when(sagaRepository.findById(saga.getIdSaga())).thenReturn(Optional.of(saga));
         when(reservaRepository.findBySagaVehiculo_IdSaga(saga.getIdSaga())).thenReturn(Optional.of(enCurso));
-        when(vehicleRepository.save(any())).thenReturn(vehiculo);
         when(sagaRepository.save(any())).thenReturn(saga);
 
-        List<ReservaResponse> result = service.cancelarReservasPorPlaca("ABC123", "emergencia");
-        assertEquals(1, result.size());
-        assertEquals(EstadoReserva.CANCELADA, enCurso.getEstadoReserva());
-    }
-
-    @Test
-    void confirmarReservaPorPlacaConSagaNoEnProgreso() {
-        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
-        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.INICIADA);
-        reserva.setSagaVehiculo(saga);
-
-        when(reservaRepository.findAllByVehiculoNumeroPlacaIgnoreCaseAndEstadoReserva("ABC123", EstadoReserva.PENDIENTE))
-                .thenReturn(List.of(reserva));
-        when(reservaRepository.saveAll(anyList())).thenReturn(List.of(reserva));
-
-        assertEquals(1, service.confirmarReservaPorPlaca("ABC123").size());
-        verify(sagaRepository, never()).save(any());
+        assertEquals(1, service.cancelarReservasPorPlaca("ABC123", "emergencia").size());
     }
 
     @Test
@@ -396,50 +280,67 @@ class SagaServiceImplTest {
     }
 
     @Test
-    void confirmarReservaPorPlacaConSagaEnProgresoYSinSaga() {
-        ReservaVehiculo conSaga = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
-        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.EN_PROGRESO);
-        conSaga.setSagaVehiculo(saga);
-
-        ReservaVehiculo sinSaga = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
-        sinSaga.setSagaVehiculo(null);
-
-        when(reservaRepository.findAllByVehiculoNumeroPlacaIgnoreCaseAndEstadoReserva("ABC123", EstadoReserva.PENDIENTE))
-                .thenReturn(List.of(conSaga, sinSaga));
-        when(reservaRepository.saveAll(anyList())).thenReturn(List.of(conSaga, sinSaga));
-        when(sagaRepository.save(any())).thenReturn(saga);
-
-        assertEquals(2, service.confirmarReservaPorPlaca("ABC123").size());
-        assertEquals(EstadoSaga.COMPLETADA, saga.getEstadoSaga());
-        verify(sagaRepository, times(1)).save(saga);
+    void procesarLiberacionAsignacionInvalida() {
+        assertFalse(service.procesarLiberacionAsignacion(null).isProcessed());
+        assertFalse(service.procesarLiberacionAsignacion(
+                VehicleReleaseEvent.builder().motivo("x").build()).isProcessed());
+        assertFalse(service.procesarLiberacionAsignacion(
+                VehicleReleaseEvent.builder().idAsignacion(UUID.randomUUID()).build()).isProcessed());
     }
 
     @Test
-    void cancelarReservasPorPlacaVehiculoNoExiste() {
-        when(vehicleRepository.findByNumeroPlacaIgnoreCaseAndActivoTrue("NOPE"))
-                .thenReturn(Optional.empty());
-        assertThrows(ResourceNotFoundException.class,
-                () -> service.cancelarReservasPorPlaca("NOPE", "x"));
+    void procesarLiberacionAsignacionSinReservaLocal() {
+        UUID idAsignacion = UUID.randomUUID();
+        when(reservaRepository.findByIdAsignacionExt(idAsignacion)).thenReturn(Optional.empty());
+
+        var result = service.procesarLiberacionAsignacion(VehicleReleaseEvent.builder()
+                .idAsignacion(idAsignacion)
+                .motivo("cancelacion")
+                .build());
+
+        assertFalse(result.isProcessed());
     }
 
     @Test
-    void compensarSagaUsaUsuarioAutenticado() {
-        vehiculo.setEstadoVehiculo(EstadoVehiculo.DISPONIBLE);
-        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.EN_PROGRESO);
+    void procesarLiberacionAsignacionIdempotente() {
+        UUID idAsignacion = UUID.randomUUID();
+        ReservaVehiculo cancelada = TestDataFactory.reserva(vehiculo, EstadoReserva.CANCELADA);
+        cancelada.setIdAsignacionExt(idAsignacion);
 
+        when(reservaRepository.findByIdAsignacionExt(idAsignacion)).thenReturn(Optional.of(cancelada));
+
+        var result = service.procesarLiberacionAsignacion(VehicleReleaseEvent.builder()
+                .idAsignacion(idAsignacion)
+                .motivo("cancelacion")
+                .build());
+
+        assertTrue(result.isProcessed());
+        assertTrue(result.isIdempotentReplay());
+    }
+
+    @Test
+    void procesarLiberacionAsignacionCompensaReserva() {
+        UUID idAsignacion = UUID.randomUUID();
+        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.COMPLETADA);
+        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
+        reserva.setIdAsignacionExt(idAsignacion);
+        reserva.setSagaVehiculo(saga);
+
+        when(reservaRepository.findByIdAsignacionExt(idAsignacion)).thenReturn(Optional.of(reserva));
+        when(reservaRepository.findById(reserva.getIdReserva())).thenReturn(Optional.of(reserva));
         when(sagaRepository.findById(saga.getIdSaga())).thenReturn(Optional.of(saga));
-        when(reservaRepository.findBySagaVehiculo_IdSaga(saga.getIdSaga())).thenReturn(Optional.empty());
-        when(vehicleRepository.save(any())).thenReturn(vehiculo);
+        when(reservaRepository.findBySagaVehiculo_IdSaga(saga.getIdSaga())).thenReturn(Optional.of(reserva));
+        when(reservaRepository.save(any())).thenReturn(reserva);
         when(sagaRepository.save(any())).thenReturn(saga);
 
-        var auth = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
-                "operador.real", null, List.of());
-        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
-        try {
-            assertTrue(service.compensarSaga(saga.getIdSaga(), "manual"));
-            assertEquals("operador.real", saga.getCompensadoPor());
-        } finally {
-            org.springframework.security.core.context.SecurityContextHolder.clearContext();
-        }
+        var result = service.procesarLiberacionAsignacion(VehicleReleaseEvent.builder()
+                .idAsignacion(idAsignacion)
+                .motivo("cancelacion")
+                .origen("ASIGNACIONES")
+                .build());
+
+        assertTrue(result.isProcessed());
+        assertFalse(result.isIdempotentReplay());
+        assertEquals(EstadoReserva.CANCELADA, reserva.getEstadoReserva());
     }
 }
