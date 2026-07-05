@@ -21,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.List;
 import java.util.UUID;
@@ -469,6 +470,37 @@ public class VehicleController {
         // Delega la validación liviana al servicio pasándole la placa y responde con un
         // código HTTP 200 (OK).
         return ResponseEntity.ok(vehicleService.getDisponibilidadByPlaca(placa));
+    }
+
+    @GetMapping("/{id}/disponibilidad/rango")
+    @Operation(summary = "Disponibilidad por rango de fechas (ID)",
+            description = "Evalúa aptitud operativa, documentos y conflictos de reserva CONFIRMADA en el rango indicado.")
+    public ResponseEntity<DisponibilidadRangoResponse> getDisponibilidadEnRango(
+            @PathVariable UUID id,
+            @RequestParam LocalDate fechaInicio,
+            @RequestParam LocalDate fechaFin) {
+        return ResponseEntity.ok(vehicleService.getDisponibilidadEnRango(id, fechaInicio, fechaFin));
+    }
+
+    @GetMapping("/placa/{placa}/disponibilidad/rango")
+    @Operation(summary = "Disponibilidad por rango de fechas (placa)",
+            description = "Evalúa aptitud operativa, documentos y conflictos de reserva CONFIRMADA en el rango indicado.")
+    public ResponseEntity<DisponibilidadRangoResponse> getDisponibilidadEnRangoByPlaca(
+            @PathVariable String placa,
+            @RequestParam LocalDate fechaInicio,
+            @RequestParam LocalDate fechaFin) {
+        return ResponseEntity.ok(vehicleService.getDisponibilidadEnRangoByPlaca(placa, fechaInicio, fechaFin));
+    }
+
+    @GetMapping("/disponibles/rango")
+    @Operation(summary = "Vehículos asignables en un rango",
+            description = "Lista vehículos operativos, con documentos vigentes y sin solapamiento de reservas CONFIRMADAS.")
+    public ResponseEntity<Page<VehicleResponse>> getDisponiblesEnRango(
+            @RequestParam String nombreTipo,
+            @RequestParam LocalDate fechaInicio,
+            @RequestParam LocalDate fechaFin,
+            Pageable pageable) {
+        return ResponseEntity.ok(vehicleService.findDisponiblesEnRango(nombreTipo, fechaInicio, fechaFin, pageable));
     }
 
     // =========================================================================

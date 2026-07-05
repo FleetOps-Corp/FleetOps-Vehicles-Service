@@ -12,4 +12,8 @@ public final class KafkaTopics {
 
     public static final String VEHICLE_FAILED =
             "fleetops.asignaciones.vehiculo.fallido";
+
+    /** Asignaciones → Vehículos: cancelar/liberar una asignación confirmada. */
+    public static final String VEHICLE_RELEASE =
+            "fleetops.vehiculos.liberar";
 }

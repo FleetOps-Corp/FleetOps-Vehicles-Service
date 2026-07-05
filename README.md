@@ -2,13 +2,11 @@
 
 ## Descripción General
 
-**FleetOps Vehicles** es un microservicio backend construido con **Spring Boot 3.3.5** que gestiona operaciones de vehículos en una flota. Forma parte de la arquitectura de microservicios del sistema FleetOps y proporciona APIs REST para:
+**FleetOps Vehicles** es un microservicio backend construido con **Spring Boot 3.3.5** que gestiona operaciones de vehículos en una flota. Forma parte de la arquitectura de microservicios del sistema FleetOps y expone:
 
-- Gestión de vehículos
-- Gestión de tipos de vehículos
-- Reservas de vehículos
-- Historial de estados
-- Patrones Saga distribuidos
+- APIs REST para gestión de vehículos, tipos, reservas e historial
+- Integración Kafka con **Asignaciones** (solicitar / liberar vehículo)
+- Patrón Saga distribuido para asignaciones
 - Monitoreo con métricas Prometheus
 
 ## Stack Tecnológico
@@ -24,6 +22,7 @@
 | Validación | Spring Validation |
 | Documentación API | Swagger/OpenAPI 3 (springdoc 2.6.0) |
 | Monitoreo | Spring Actuator + Micrometer Prometheus |
+| Mensajería | Apache Kafka (Spring Kafka) |
 | Resilencia | Resilience4j |
 | Build | Maven |
 
@@ -231,6 +230,8 @@ http://localhost:8081
 | Endpoint | Descripción |
 |----------|-------------|
 | GET http://localhost:8081/vehiculos | Listar vehículos |
+| GET http://localhost:8081/vehiculos/{id}/disponibilidad/rango?fechaInicio=&fechaFin= | Disponibilidad por calendario |
+| GET http://localhost:8081/vehiculos/disponibles/rango?nombreTipo=&fechaInicio=&fechaFin= | Vehículos asignables en rango |
 | GET http://localhost:8081/swagger-ui.html | Documentación Swagger (UI interactiva) |
 | GET http://localhost:8081/v3/api-docs | OpenAPI JSON |
 | GET http://localhost:8081/actuator | Métricas y salud |
@@ -369,6 +370,33 @@ public ResponseEntity<?> createVehiculo(@Valid @RequestBody CreateVehiculoReques
 
 ---
 
+## Integración Kafka
+
+Contrato completo: [docs/contrato-kafka.md](docs/contrato-kafka.md)
+
+| Topic | Rol de Vehículos |
+|-------|------------------|
+| `fleetops.vehiculos.solicitar` | **Consume** — crea reserva CONFIRMADA |
+| `fleetops.asignaciones.vehiculo.confirmado` | **Publica** — asignación exitosa |
+| `fleetops.asignaciones.vehiculo.fallido` | **Publica** — asignación rechazada |
+| `fleetops.vehiculos.liberar` | **Consume** — cancela reserva (payload provisional) |
+
+Las asignaciones **no** se crean por REST; solo vía Kafka. Los endpoints `POST /reservas/{id}/compensar` y `POST /placa/{placa}/reservas/cancelar` siguen disponibles para operaciones manuales o integraciones HTTP.
+
+### Disponibilidad por rango (REST)
+
+Los endpoints `GET .../disponibilidad` evalúan solo estado operativo y documentos. Para consultar el **calendario** (reservas CONFIRMADAS):
+
+```
+GET /vehiculos/{id}/disponibilidad/rango?fechaInicio=2026-07-10&fechaFin=2026-07-15
+GET /vehiculos/placa/{placa}/disponibilidad/rango?fechaInicio=...&fechaFin=...
+GET /vehiculos/disponibles/rango?nombreTipo=furgon&fechaInicio=...&fechaFin=...
+```
+
+La respuesta incluye `operativo`, `documentosVigentes`, `disponibleEnRango` y `motivo` si no es asignable.
+
+---
+
 ## Monitoreo y Métricas
 
 ### Spring Actuator
@@ -388,10 +416,14 @@ Si tienes Prometheus configurado:
 http://localhost:8081/actuator/prometheus
 ```
 
-Métricas disponibles:
-- jvm_memory_used_bytes - Memoria JVM
-- http_requests_total - Total de requests HTTP
-- vehicle_operations_total - Operaciones de vehículos
+Métricas custom (Prometheus):
+
+| Métrica | Descripción |
+|---------|-------------|
+| `fleetops_vehiculos_por_estado{estado="..."}` | Conteo de vehículos activos por estado |
+| `fleetops_reservas_activas` | Reservas CONFIRMADAS en curso (ahora ∈ [inicio, fin]) |
+
+Otras métricas estándar: `jvm_memory_used_bytes`, `http_server_requests_seconds`, etc.
 
 ---
 
@@ -533,7 +565,7 @@ kill -9 <PID>
 
 - Arquitecto: FleetOps Team
 - Framework: Spring Boot 3.3.5
-- Última actualización: 2026-06-24
+- Última actualización: 2026-07-05
 
 ---
 

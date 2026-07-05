@@ -4,6 +4,7 @@ import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.exception.BusinessException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
 import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleRequestEvent;
+import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleReleaseEvent;
 import com.fleetops.vehicles.mapper.DtoMapperReserva;
 import com.fleetops.vehicles.mapper.DtoMapperSaga;
 import com.fleetops.vehicles.models.entities.*;
@@ -276,5 +277,70 @@ class SagaServiceImplTest {
         when(sagaRepository.findById(any())).thenReturn(Optional.empty());
         assertThrows(ResourceNotFoundException.class,
                 () -> service.compensarSaga(UUID.randomUUID(), "x"));
+    }
+
+    @Test
+    void procesarLiberacionAsignacionInvalida() {
+        assertFalse(service.procesarLiberacionAsignacion(null).isProcessed());
+        assertFalse(service.procesarLiberacionAsignacion(
+                VehicleReleaseEvent.builder().motivo("x").build()).isProcessed());
+        assertFalse(service.procesarLiberacionAsignacion(
+                VehicleReleaseEvent.builder().idAsignacion(UUID.randomUUID()).build()).isProcessed());
+    }
+
+    @Test
+    void procesarLiberacionAsignacionSinReservaLocal() {
+        UUID idAsignacion = UUID.randomUUID();
+        when(reservaRepository.findByIdAsignacionExt(idAsignacion)).thenReturn(Optional.empty());
+
+        var result = service.procesarLiberacionAsignacion(VehicleReleaseEvent.builder()
+                .idAsignacion(idAsignacion)
+                .motivo("cancelacion")
+                .build());
+
+        assertFalse(result.isProcessed());
+    }
+
+    @Test
+    void procesarLiberacionAsignacionIdempotente() {
+        UUID idAsignacion = UUID.randomUUID();
+        ReservaVehiculo cancelada = TestDataFactory.reserva(vehiculo, EstadoReserva.CANCELADA);
+        cancelada.setIdAsignacionExt(idAsignacion);
+
+        when(reservaRepository.findByIdAsignacionExt(idAsignacion)).thenReturn(Optional.of(cancelada));
+
+        var result = service.procesarLiberacionAsignacion(VehicleReleaseEvent.builder()
+                .idAsignacion(idAsignacion)
+                .motivo("cancelacion")
+                .build());
+
+        assertTrue(result.isProcessed());
+        assertTrue(result.isIdempotentReplay());
+    }
+
+    @Test
+    void procesarLiberacionAsignacionCompensaReserva() {
+        UUID idAsignacion = UUID.randomUUID();
+        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.COMPLETADA);
+        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
+        reserva.setIdAsignacionExt(idAsignacion);
+        reserva.setSagaVehiculo(saga);
+
+        when(reservaRepository.findByIdAsignacionExt(idAsignacion)).thenReturn(Optional.of(reserva));
+        when(reservaRepository.findById(reserva.getIdReserva())).thenReturn(Optional.of(reserva));
+        when(sagaRepository.findById(saga.getIdSaga())).thenReturn(Optional.of(saga));
+        when(reservaRepository.findBySagaVehiculo_IdSaga(saga.getIdSaga())).thenReturn(Optional.of(reserva));
+        when(reservaRepository.save(any())).thenReturn(reserva);
+        when(sagaRepository.save(any())).thenReturn(saga);
+
+        var result = service.procesarLiberacionAsignacion(VehicleReleaseEvent.builder()
+                .idAsignacion(idAsignacion)
+                .motivo("cancelacion")
+                .origen("ASIGNACIONES")
+                .build());
+
+        assertTrue(result.isProcessed());
+        assertFalse(result.isIdempotentReplay());
+        assertEquals(EstadoReserva.CANCELADA, reserva.getEstadoReserva());
     }
 }

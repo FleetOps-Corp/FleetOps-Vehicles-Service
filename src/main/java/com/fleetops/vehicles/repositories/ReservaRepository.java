@@ -189,4 +189,11 @@ public interface ReservaRepository extends JpaRepository<ReservaVehiculo, UUID> 
     @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo", "sagaVehiculo"})
     Optional<ReservaVehiculo> findByIdAsignacionExt(UUID idAsignacionExt);
 
+    @Query("""
+            SELECT COUNT(r) FROM ReservaVehiculo r
+            WHERE r.estadoReserva = com.fleetops.vehicles.models.entities.EstadoReserva.CONFIRMADA
+              AND :now >= r.fechaInicio AND :now <= r.fechaFin
+            """)
+    long countCurrentlyActiveReservations(@Param("now") LocalDateTime now);
+
 }

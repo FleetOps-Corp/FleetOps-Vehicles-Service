@@ -3,12 +3,14 @@ package com.fleetops.vehicles.services.application;
 import com.fleetops.vehicles.exception.BusinessException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
 import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleRequestEvent;
+import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleReleaseEvent;
 import com.fleetops.vehicles.mapper.DtoMapperReserva;
 import com.fleetops.vehicles.mapper.DtoMapperSaga;
 import com.fleetops.vehicles.models.entities.*;
 import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.dto.response.SagaResponse;
 import com.fleetops.vehicles.dto.response.VehicleAssignmentResult;
+import com.fleetops.vehicles.dto.response.VehicleReleaseResult;
 import com.fleetops.vehicles.repositories.*;
 import com.fleetops.vehicles.services.domain.AvailabilityPolicy;
 import lombok.RequiredArgsConstructor;
@@ -456,5 +458,64 @@ public class SagaServiceImpl implements SagaService {
         }
 
         return crearReservaConfirmada(vehiculoAsignable.get(), event, claveIdempotencia, fechaInicio, fechaFin);
+    }
+
+    @Override
+    @Transactional
+    public VehicleReleaseResult procesarLiberacionAsignacion(VehicleReleaseEvent event) {
+        if (event == null) {
+            log.warn("Evento de liberación nulo ignorado");
+            return VehicleReleaseResult.ignored("Evento nulo");
+        }
+
+        if (event.getIdAsignacion() == null && event.getIdSaga() == null) {
+            log.warn("Evento de liberación inválido: falta idAsignacion o idSaga");
+            return VehicleReleaseResult.ignored("Debe incluir idAsignacion o idSaga");
+        }
+
+        if (event.getMotivo() == null || event.getMotivo().isBlank()) {
+            log.warn("Evento de liberación inválido: motivo vacío para asignación {}", event.getIdAsignacion());
+            return VehicleReleaseResult.ignored("El motivo es obligatorio");
+        }
+
+        Optional<ReservaVehiculo> reservaOpt = Optional.empty();
+        if (event.getIdAsignacion() != null) {
+            reservaOpt = reservaRepository.findByIdAsignacionExt(event.getIdAsignacion());
+        }
+        if (reservaOpt.isEmpty() && event.getIdSaga() != null) {
+            reservaOpt = reservaRepository.findBySagaVehiculo_IdSaga(event.getIdSaga());
+        }
+
+        if (reservaOpt.isEmpty()) {
+            log.warn("Liberación sin reserva local (asignación={}, saga={}). Puede ser cancelación previa a confirmación.",
+                    event.getIdAsignacion(), event.getIdSaga());
+            return VehicleReleaseResult.ignored("No existe reserva local para la asignación indicada");
+        }
+
+        ReservaVehiculo reserva = reservaOpt.get();
+        UUID idAsignacion = reserva.getIdAsignacionExt();
+
+        if (reserva.getEstadoReserva() == EstadoReserva.CANCELADA) {
+            log.info("Liberación idempotente: reserva {} ya cancelada (asignación {})",
+                    reserva.getIdReserva(), idAsignacion);
+            return VehicleReleaseResult.idempotent(idAsignacion, reserva.getIdReserva());
+        }
+
+        if (reserva.getSagaVehiculo() != null
+                && reserva.getSagaVehiculo().getEstadoSaga() == EstadoSaga.COMPENSADA) {
+            log.info("Liberación idempotente: saga {} ya compensada (asignación {})",
+                    reserva.getSagaVehiculo().getIdSaga(), idAsignacion);
+            return VehicleReleaseResult.idempotent(idAsignacion, reserva.getIdReserva());
+        }
+
+        String motivo = event.getMotivo().trim();
+        if (event.getOrigen() != null && !event.getOrigen().isBlank()) {
+            motivo = "[" + event.getOrigen().trim() + "] " + motivo;
+        }
+
+        compensarPorReservaId(reserva.getIdReserva(), motivo);
+        log.info("Reserva {} liberada por evento Kafka (asignación {})", reserva.getIdReserva(), idAsignacion);
+
+        return VehicleReleaseResult.processed(idAsignacion, reserva.getIdReserva());
     }
 }

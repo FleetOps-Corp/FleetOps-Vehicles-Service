@@ -1,9 +1,11 @@
 package com.fleetops.vehicles.services.application;
 
 import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleRequestEvent;
+import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleReleaseEvent;
 import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.dto.response.SagaResponse;
 import com.fleetops.vehicles.dto.response.VehicleAssignmentResult;
+import com.fleetops.vehicles.dto.response.VehicleReleaseResult;
 import com.fleetops.vehicles.models.entities.EstadoReserva;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -54,4 +56,6 @@ public interface SagaService {
             Pageable pageable);
 
     VehicleAssignmentResult procesarSolicitudAsignacion(VehicleRequestEvent event);
+
+    VehicleReleaseResult procesarLiberacionAsignacion(VehicleReleaseEvent event);
 }

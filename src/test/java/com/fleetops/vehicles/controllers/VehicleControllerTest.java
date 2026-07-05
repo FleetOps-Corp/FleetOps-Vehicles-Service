@@ -17,6 +17,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -102,6 +103,22 @@ class VehicleControllerTest {
         assertEquals(HttpStatus.OK, controller.reactivateByPlaca("ABC123", "motivo").getStatusCode());
         assertEquals(HttpStatus.OK, controller.getDisponibilidad(id).getStatusCode());
         assertEquals(HttpStatus.OK, controller.getDisponibilidadByPlaca("ABC123").getStatusCode());
+        when(vehicleService.getDisponibilidadEnRango(any(), any(), any()))
+                .thenReturn(new DisponibilidadRangoResponse(
+                        id, "ABC123", "DISPONIBLE", true, true, true,
+                        LocalDate.now(), LocalDate.now().plusDays(1), null, LocalDateTime.now()));
+        assertEquals(HttpStatus.OK,
+                controller.getDisponibilidadEnRango(id, LocalDate.now(), LocalDate.now().plusDays(1)).getStatusCode());
+        when(vehicleService.getDisponibilidadEnRangoByPlaca(anyString(), any(), any()))
+                .thenReturn(new DisponibilidadRangoResponse(
+                        id, "ABC123", "DISPONIBLE", true, true, true,
+                        LocalDate.now(), LocalDate.now().plusDays(1), null, LocalDateTime.now()));
+        assertEquals(HttpStatus.OK, controller.getDisponibilidadEnRangoByPlaca(
+                "ABC123", LocalDate.now(), LocalDate.now().plusDays(1)).getStatusCode());
+        when(vehicleService.findDisponiblesEnRango(anyString(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(vehicle)));
+        assertEquals(HttpStatus.OK, controller.getDisponiblesEnRango(
+                "Fur", LocalDate.now(), LocalDate.now().plusDays(1), pageable).getStatusCode());
         assertEquals(HttpStatus.OK, controller.getHistorial(id, pageable).getStatusCode());
         assertEquals(HttpStatus.OK, controller.getHistorialByPlaca("ABC123", pageable).getStatusCode());
         assertEquals(HttpStatus.OK, controller.getHistorialGlobal(pageable).getStatusCode());

@@ -3,6 +3,7 @@ package com.fleetops.vehicles.services.application;
 import com.fleetops.vehicles.dto.request.EstadoCambioRequest;
 import com.fleetops.vehicles.dto.request.VehicleRequest;
 import com.fleetops.vehicles.dto.request.VehicleUpdateRequest;
+import com.fleetops.vehicles.dto.response.DisponibilidadRangoResponse;
 import com.fleetops.vehicles.dto.response.VehicleResponse;
 import com.fleetops.vehicles.exception.BusinessException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
@@ -252,6 +253,51 @@ class VehicleServiceImplTest {
         assertEquals(0, service.getHistorialByVehiculoId(vehiculo.getIdVehiculo(), PageRequest.of(0, 10)).getTotalElements());
         assertEquals(0, service.findAllHistorialGlobal(PageRequest.of(0, 10)).getTotalElements());
         assertEquals(0, service.getHistorialByPlaca("ABC123", PageRequest.of(0, 10)).getTotalElements());
+    }
+
+    @Test
+    void disponibilidadEnRango() {
+        LocalDate inicio = LocalDate.now().plusDays(1);
+        LocalDate fin = LocalDate.now().plusDays(5);
+
+        when(vehicleRepository.findById(vehiculo.getIdVehiculo())).thenReturn(Optional.of(vehiculo));
+        when(availabilityPolicy.isOperational(vehiculo)).thenReturn(true);
+        when(availabilityPolicy.hasValidDocuments(vehiculo)).thenReturn(true);
+        when(availabilityPolicy.hasReservationConflict(eq(vehiculo.getIdVehiculo()), any(), any()))
+                .thenReturn(false);
+
+        DisponibilidadRangoResponse rango = service.getDisponibilidadEnRango(
+                vehiculo.getIdVehiculo(), inicio, fin);
+        assertTrue(rango.disponibleEnRango());
+        assertNull(rango.motivo());
+
+        when(availabilityPolicy.hasReservationConflict(eq(vehiculo.getIdVehiculo()), any(), any()))
+                .thenReturn(true);
+        DisponibilidadRangoResponse conflicto = service.getDisponibilidadEnRango(
+                vehiculo.getIdVehiculo(), inicio, fin);
+        assertFalse(conflicto.disponibleEnRango());
+        assertNotNull(conflicto.motivo());
+
+        when(vehicleRepository.findByNumeroPlacaIgnoreCaseAndActivoTrue("ABC123"))
+                .thenReturn(Optional.of(vehiculo));
+        assertNotNull(service.getDisponibilidadEnRangoByPlaca("ABC123", inicio, fin));
+
+        assertThrows(BusinessException.class,
+                () -> service.getDisponibilidadEnRango(vehiculo.getIdVehiculo(), fin, inicio));
+    }
+
+    @Test
+    void findDisponiblesEnRango() {
+        LocalDate inicio = LocalDate.now().plusDays(1);
+        LocalDate fin = LocalDate.now().plusDays(3);
+
+        when(vehicleRepository.findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase("Fur"))
+                .thenReturn(List.of(vehiculo));
+        when(availabilityPolicy.isAssignable(eq(vehiculo), any(), any())).thenReturn(true);
+        when(dtoMapperVehicle.toDto(vehiculo)).thenReturn(vehicleResponse);
+
+        assertEquals(1, service.findDisponiblesEnRango("Fur", inicio, fin, PageRequest.of(0, 10))
+                .getTotalElements());
     }
 
     @Test
