@@ -46,6 +46,9 @@ public interface VehicleRepository extends JpaRepository<Vehiculo, UUID> {
 
   List<Vehiculo> findAllByActivoTrueAndEstadoVehiculoNot(EstadoVehiculo estadoVehiculo);
 
+  List<Vehiculo> findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase(
+        String nombreTipo);
+
   @Query("SELECT v.estadoVehiculo, COUNT(v) FROM Vehiculo v WHERE v.activo = true GROUP BY v.estadoVehiculo")
   List<Object[]> countActiveGroupByEstado();
 

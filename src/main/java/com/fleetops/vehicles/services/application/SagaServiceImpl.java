@@ -6,6 +6,7 @@ package com.fleetops.vehicles.services.application;
 import com.fleetops.vehicles.exception.BusinessException;
 import com.fleetops.vehicles.exception.ReservaConflictException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
+import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleRequestEvent;
 import com.fleetops.vehicles.mapper.DtoMapperReserva;
 import com.fleetops.vehicles.mapper.DtoMapperSaga;
 import com.fleetops.vehicles.models.entities.*;
@@ -14,6 +15,7 @@ import com.fleetops.vehicles.dto.request.UpdateReservaDatesRequest;
 import com.fleetops.vehicles.dto.response.AgendaReservaResponse;
 import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.dto.response.SagaResponse;
+import com.fleetops.vehicles.dto.response.VehicleAssignmentResult;
 import com.fleetops.vehicles.repositories.*;
 import com.fleetops.vehicles.services.domain.IdempotencyValidator;
 
@@ -23,11 +25,13 @@ import lombok.extern.slf4j.Slf4j;
 
 // Importaciones de Spring para paginación, seguridad y transacciones.
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 // Importaciones de Java para manejo de tiempos, listas y utilidades.
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -96,39 +100,53 @@ public class SagaServiceImpl implements SagaService {
         }
 
         // =====================================================================
-        // 3. Validar Disponibilidad (Con mensajes dinámicos)
+        // 3. Validar estados (Con mensajes dinámicos)
         // =====================================================================
-        if (vehiculo.getEstadoVehiculo() != EstadoVehiculo.DISPONIBLE) {
+        if (vehiculo.getEstadoVehiculo() == EstadoVehiculo.EN_MANTENIMIENTO) {
 
-            // 🌟 NUEVA LÓGICA: Determinamos el mensaje exacto según el estado real
-            String mensajeError = "";
-            switch (vehiculo.getEstadoVehiculo()) {
-                case RESERVADO:
-                    mensajeError = "El vehículo no está disponible. Inténtelo en los días en que no esté reservado.";
-                    break;
-                case FUERA_DE_SERVICIO:
-                    mensajeError = "El vehículo no está disponible, está fuera de servicio.";
-                    break;
-                case EN_MANTENIMIENTO:
-                    mensajeError = "El vehículo no está disponible, está en mantenimiento.";
-                    break;
-                default:
-                    break;
-            }
+            throw new ReservaConflictException(
+                    "El vehículo no está disponible, está en mantenimiento.",
+                    List.of()
+            );
 
-            // Consultamos la base de datos para ver si tiene viajes programados
-            List<EstadoReserva> estadosOcupados = List.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA);
-            List<ReservaVehiculo> reservasActivas = reservaRepository
-                    .findByVehiculo_IdVehiculoAndEstadoReservaIn(vehiculo.getIdVehiculo(), estadosOcupados);
-
-            List<AgendaReservaResponse> agenda = reservasActivas.stream()
-                    .map(r -> new AgendaReservaResponse(r.getFechaInicio(), r.getFechaFin(),
-                            r.getEstadoReserva().name()))
-                    .toList();
-
-            // Lanzamos la excepción inyectando el texto que calculamos en el switch
-            throw new ReservaConflictException(mensajeError, agenda);
         }
+
+        if (vehiculo.getEstadoVehiculo() == EstadoVehiculo.FUERA_DE_SERVICIO) {
+
+            throw new ReservaConflictException(
+                    "El vehículo no está disponible, está fuera de servicio.",
+                    List.of()
+            );
+
+        }
+        // if (vehiculo.getEstadoVehiculo() != EstadoVehiculo.DISPONIBLE) {
+
+        //     // 🌟 NUEVA LÓGICA: Determinamos el mensaje exacto según el estado real
+        //     String mensajeError = "";
+        //     switch (vehiculo.getEstadoVehiculo()) {
+        //         case FUERA_DE_SERVICIO:
+        //             mensajeError = "El vehículo no está disponible, está fuera de servicio.";
+        //             break;
+        //         case EN_MANTENIMIENTO:
+        //             mensajeError = "El vehículo no está disponible, está en mantenimiento.";
+        //             break;
+        //         default:
+        //             break;
+        //     }
+
+        //     // Consultamos la base de datos para ver si tiene viajes programados
+        //     List<EstadoReserva> estadosOcupados = List.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA);
+        //     List<ReservaVehiculo> reservasActivas = reservaRepository
+        //             .findByVehiculo_IdVehiculoAndEstadoReservaIn(vehiculo.getIdVehiculo(), estadosOcupados);
+
+        //     List<AgendaReservaResponse> agenda = reservasActivas.stream()
+        //             .map(r -> new AgendaReservaResponse(r.getFechaInicio(), r.getFechaFin(),
+        //                     r.getEstadoReserva().name()))
+        //             .toList();
+
+        //     // Lanzamos la excepción inyectando el texto que calculamos en el switch
+        //     throw new ReservaConflictException(mensajeError, agenda);
+        // }
 
         // 4. Validar Solapamiento de Fechas
         List<ReservaVehiculo> conflictos = reservaRepository.obtenerReservasConflictivas(
@@ -615,5 +633,98 @@ public class SagaServiceImpl implements SagaService {
         return sagaRepository
                 .findByVehiculo_NumeroPlacaIgnoreCaseAndEstadoSagaOrderByCreadoEnDesc(placa, estado, pageable)
                 .map(dtoMapperSaga::toDto);
+    }
+
+    // Método privado encargado de buscar un vehpículo disponible de acuerdo al tipo de vehículo y las fechas de reserva
+    // Valida que el vehículo esté en operación y no tenga reservas que se solapen con la nueva
+    private Optional<Vehiculo> buscarVehiculoDisponible(
+        String tipoVehiculo,
+        LocalDate fechaInicio,
+        LocalDate fechaFin) {
+
+        List<Vehiculo> candidatos = vehicleRepository
+                .findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase(tipoVehiculo);
+
+        candidatos = candidatos.stream()
+                .filter(v -> v.getEstadoVehiculo() != EstadoVehiculo.EN_MANTENIMIENTO)
+                .filter(v -> v.getEstadoVehiculo() != EstadoVehiculo.FUERA_DE_SERVICIO)
+                .toList();
+
+        for (Vehiculo vehiculo : candidatos) {
+
+            List<ReservaVehiculo> conflictos = reservaRepository.obtenerReservasConflictivas(
+                    vehiculo.getIdVehiculo(),
+                    List.of(
+                            EstadoReserva.PENDIENTE,
+                            EstadoReserva.CONFIRMADA
+                    ),
+                    fechaFin.atTime(23, 59, 59),
+                    fechaInicio.atStartOfDay());
+
+            if (conflictos.isEmpty()) {
+                return Optional.of(vehiculo);
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    @Override
+    @Transactional
+    public VehicleAssignmentResult procesarSolicitudAsignacion(
+        VehicleRequestEvent event) {
+
+        String claveIdempotencia = event.getIdSaga().toString();
+        idempotencyValidator.validateNotDuplicate(claveIdempotencia);
+
+        Optional<Vehiculo> vehiculoDisponible =
+        buscarVehiculoDisponible(
+                event.getTipoVehiculo(),
+                event.getFechaInicio(),
+                event.getFechaFin());
+
+        if (vehiculoDisponible.isEmpty()) {
+
+            return VehicleAssignmentResult.builder()
+                    .success(false)
+                    .idAsignacion(event.getIdAsignacion())
+                    .motivo("Sin vehículos disponibles del tipo " + event.getTipoVehiculo())
+                    .build();
+        }
+
+        Vehiculo vehiculo = vehiculoDisponible.get();
+
+        // Crear la saga
+        SagaVehiculo saga = new SagaVehiculo();
+        saga.setVehiculo(vehiculo);
+        saga.setTipoOperacion("RESERVA_VEHICULO");
+        saga.setEstadoSaga(EstadoSaga.EN_PROGRESO);
+        saga.setClaveIdempotencia(claveIdempotencia);
+        saga.setPayload(event.toString());
+        saga.setCreadoEn(LocalDateTime.now());
+        saga = sagaRepository.save(saga);
+
+        // Crear la reserva
+        ReservaVehiculo reserva = new ReservaVehiculo();
+        reserva.setVehiculo(vehiculo);
+        reserva.setSagaVehiculo(saga);
+        reserva.setIdAsignacionExt(event.getIdAsignacion());
+        reserva.setEstadoReserva(EstadoReserva.PENDIENTE);
+        reserva.setClaveIdempotencia(claveIdempotencia);
+        reserva.setSolicitadoPor("Asignaciones-Service");
+        reserva.setFechaInicio(
+                event.getFechaInicio().atStartOfDay());
+        reserva.setFechaFin(
+                event.getFechaFin().atTime(23,59,59));
+        reserva.setCreadoEn(LocalDateTime.now());
+        reservaRepository.save(reserva);
+
+
+        return VehicleAssignmentResult.builder()
+                .success(true)
+                .idAsignacion(event.getIdAsignacion())
+                .idVehiculo(vehiculo.getIdVehiculo())
+                .build();
+
     }
 }
