@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 // Importa la fábrica de Loggers.
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 // Importa los estados HTTP predefinidos de Spring (200, 404, 500, etc.).
 import org.springframework.http.HttpStatus;
 // Importa la respuesta estándar para enviar al cliente (JSON + Código HTTP).
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 // Importa herramientas de fecha y tiempo.
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 // Importa la lista para agrupar errores.
 import java.util.List;
@@ -226,5 +228,76 @@ public class GlobalExceptionHandler {
         response.put("reservas", ex.getReservas());
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolationException(
+            DataIntegrityViolationException ex, 
+            HttpServletRequest request) {
+
+        String mensajeUsuario = "No se pudo procesar la solicitud debido a un conflicto en la base de datos (dato duplicado).";
+        String causaReal = ex.getMostSpecificCause().getMessage();
+
+        if (causaReal != null) {
+            String causa = causaReal.toLowerCase();
+            if (causa.contains("uq_reservas_id_asignacion_ext") || causa.contains("id_asignacion_ext")) {
+                mensajeUsuario = "El ID de asignación externa ya está vinculado a otra reserva.";
+            } else if (causa.contains("numero_placa")) {
+                mensajeUsuario = "Ya existe un vehículo con esa placa.";
+            } else if (causa.contains("numero_chasis")) {
+                mensajeUsuario = "Ya existe un vehículo con ese número de chasis.";
+            } else if (causa.contains("numero_motor")) {
+                mensajeUsuario = "Ya existe un vehículo con ese número de motor.";
+            } else if (causa.contains("clave_idempotencia")) {
+                mensajeUsuario = "La clave de idempotencia ya fue utilizada.";
+            }
+        }
+
+        // Construimos el JSON de respuesta estándar de FleetOps
+        ErrorResponse response = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.CONFLICT.value(), // Código HTTP 409 (Conflicto)
+                "Conflicto de Integridad de Datos",
+                mensajeUsuario,
+                request.getRequestURI()
+        );
+
+        // Retornamos el HTTP 409 (Conflict) al Frontend
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgumentException(
+            IllegalArgumentException ex, HttpServletRequest request) {
+        
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.BAD_REQUEST.value()); // Devuelve un 400, no un 500
+        body.put("error", HttpStatus.BAD_REQUEST.getReasonPhrase());
+        body.put("message", ex.getMessage()); // Aquí se inyecta tu mensaje personalizado
+        body.put("path", request.getRequestURI());
+
+        return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalStateException(
+            IllegalStateException ex, 
+            HttpServletRequest request) {
+        
+        // Creamos la estructura del JSON de respuesta
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("timestamp", LocalDateTime.now());
+        errorResponse.put("status", HttpStatus.CONFLICT.value()); // Retorna 409
+        errorResponse.put("error", "Conflict");
+        
+        // ¡Aquí es donde inyectamos el mensaje exacto que enviaste desde tu servicio!
+        errorResponse.put("message", ex.getMessage()); 
+        
+        errorResponse.put("path", request.getRequestURI());
+        errorResponse.put("errorCode", "BUSINESS_RULE_VIOLATION");
+
+        // Retornamos el JSON al cliente (Postman/Frontend)
+        return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
     }
 }

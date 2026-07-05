@@ -32,6 +32,10 @@ public record VehicleResponse(
         
         // Color físico del automotor.
         String color, 
+
+        String numeroChasis,
+
+        String numeroMotor,
         
         // Kilometraje actual (dato clave para mantenimiento).
         Integer kilometraje, 
