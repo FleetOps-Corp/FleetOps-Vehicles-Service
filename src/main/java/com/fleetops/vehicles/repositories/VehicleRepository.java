@@ -5,8 +5,10 @@ import com.fleetops.vehicles.models.entities.TipoVehiculo;
 import com.fleetops.vehicles.models.entities.Vehiculo;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -49,6 +51,11 @@ public interface VehicleRepository extends JpaRepository<Vehiculo, UUID> {
 
   List<Vehiculo> findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase(
         String nombreTipo);
+
+  @EntityGraph(attributePaths = "tipoVehiculo")
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT v FROM Vehiculo v WHERE v.idVehiculo = :id AND v.activo = true")
+  Optional<Vehiculo> findByIdForUpdate(@Param("id") UUID id);
 
   @Query("SELECT v.estadoVehiculo, COUNT(v) FROM Vehiculo v WHERE v.activo = true GROUP BY v.estadoVehiculo")
   List<Object[]> countActiveGroupByEstado();

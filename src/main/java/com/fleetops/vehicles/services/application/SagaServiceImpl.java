@@ -11,18 +11,18 @@ import com.fleetops.vehicles.dto.response.SagaResponse;
 import com.fleetops.vehicles.dto.response.VehicleAssignmentResult;
 import com.fleetops.vehicles.repositories.*;
 import com.fleetops.vehicles.services.domain.AvailabilityPolicy;
-import com.fleetops.vehicles.services.domain.IdempotencyValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,7 +37,6 @@ public class SagaServiceImpl implements SagaService {
     private final SagaRepository sagaRepository;
     private final ReservaRepository reservaRepository;
     private final VehicleRepository vehicleRepository;
-    private final IdempotencyValidator idempotencyValidator;
     private final AvailabilityPolicy availabilityPolicy;
 
     @Override
@@ -282,40 +281,83 @@ public class SagaServiceImpl implements SagaService {
                 .map(dtoMapperSaga::toDto);
     }
 
-    private Optional<Vehiculo> buscarVehiculoAsignable(String tipoVehiculo, LocalDate fechaInicio, LocalDate fechaFin) {
-        LocalDateTime inicio = fechaInicio.atStartOfDay();
-        LocalDateTime fin = fechaFin.atTime(23, 59, 59);
+    private Optional<VehicleAssignmentResult> resolverRespuestaIdempotente(
+            VehicleRequestEvent event, String claveIdempotencia) {
 
-        List<Vehiculo> candidatos = vehicleRepository
-                .findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase(tipoVehiculo);
-
-        return candidatos.stream()
-                .filter(v -> availabilityPolicy.isAssignable(v, inicio, fin))
-                .findFirst();
-    }
-
-    @Override
-    @Transactional
-    public VehicleAssignmentResult procesarSolicitudAsignacion(VehicleRequestEvent event) {
-        String claveIdempotencia = event.getIdSaga().toString();
-        idempotencyValidator.validateNotDuplicate(claveIdempotencia);
-
-        Optional<Vehiculo> vehiculoAsignable = buscarVehiculoAsignable(
-                event.getTipoVehiculo(),
-                event.getFechaInicio(),
-                event.getFechaFin());
-
-        if (vehiculoAsignable.isEmpty()) {
-            return VehicleAssignmentResult.builder()
-                    .success(false)
-                    .idAsignacion(event.getIdAsignacion())
-                    .motivo("Sin vehículos disponibles del tipo " + event.getTipoVehiculo())
-                    .build();
+        Optional<ReservaVehiculo> reservaExistente = reservaRepository.findByClaveIdempotencia(claveIdempotencia);
+        if (reservaExistente.isEmpty() && event.getIdAsignacion() != null) {
+            reservaExistente = reservaRepository.findByIdAsignacionExt(event.getIdAsignacion());
         }
 
-        Vehiculo vehiculo = vehiculoAsignable.get();
-        LocalDateTime fechaInicio = event.getFechaInicio().atStartOfDay();
-        LocalDateTime fechaFin = event.getFechaFin().atTime(23, 59, 59);
+        if (reservaExistente.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ReservaVehiculo reserva = reservaExistente.get();
+        UUID idAsignacion = event.getIdAsignacion() != null ? event.getIdAsignacion() : reserva.getIdAsignacionExt();
+
+        if (reserva.getEstadoReserva() == EstadoReserva.CONFIRMADA) {
+            log.info("Reintento idempotente: asignación {} ya confirmada con vehículo {}",
+                    idAsignacion, reserva.getVehiculo().getIdVehiculo());
+            return Optional.of(VehicleAssignmentResult.builder()
+                    .success(true)
+                    .idAsignacion(idAsignacion)
+                    .idVehiculo(reserva.getVehiculo().getIdVehiculo())
+                    .idempotentReplay(true)
+                    .build());
+        }
+
+        String motivo = switch (reserva.getEstadoReserva()) {
+            case CANCELADA -> "La asignación fue cancelada previamente";
+            case FALLIDA -> "La asignación falló previamente";
+            case PENDIENTE -> "La asignación tiene una reserva pendiente legacy sin confirmar";
+            case CONFIRMADA -> "La asignación ya está confirmada";
+        };
+
+        log.warn("Reintento idempotente rechazado para asignación {}: {}", idAsignacion, motivo);
+        return Optional.of(VehicleAssignmentResult.builder()
+                .success(false)
+                .idAsignacion(idAsignacion)
+                .motivo(motivo)
+                .idempotentReplay(true)
+                .build());
+    }
+
+    private Optional<Vehiculo> asignarConLock(
+            List<Vehiculo> candidatos, LocalDateTime fechaInicio, LocalDateTime fechaFin) {
+
+        List<Vehiculo> ordenados = candidatos.stream()
+                .sorted(Comparator.comparing(Vehiculo::getNumeroPlaca, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+
+        for (Vehiculo candidato : ordenados) {
+            if (!availabilityPolicy.isAssignable(candidato, fechaInicio, fechaFin)) {
+                continue;
+            }
+
+            Optional<Vehiculo> bloqueado = vehicleRepository.findByIdForUpdate(candidato.getIdVehiculo());
+            if (bloqueado.isEmpty()) {
+                continue;
+            }
+
+            Vehiculo vehiculo = bloqueado.get();
+            if (!availabilityPolicy.isAssignable(vehiculo, fechaInicio, fechaFin)) {
+                log.debug("Vehículo {} dejó de ser asignable tras el lock (concurrencia)", vehiculo.getNumeroPlaca());
+                continue;
+            }
+
+            return Optional.of(vehiculo);
+        }
+
+        return Optional.empty();
+    }
+
+    private VehicleAssignmentResult crearReservaConfirmada(
+            Vehiculo vehiculo,
+            VehicleRequestEvent event,
+            String claveIdempotencia,
+            LocalDateTime fechaInicio,
+            LocalDateTime fechaFin) {
 
         SagaVehiculo saga = new SagaVehiculo();
         saga.setVehiculo(vehiculo);
@@ -338,7 +380,19 @@ public class SagaServiceImpl implements SagaService {
         reserva.setFechaFin(fechaFin);
         reserva.setCreadoEn(LocalDateTime.now());
         reserva.setActualizadoEn(LocalDateTime.now());
-        reservaRepository.save(reserva);
+
+        try {
+            reservaRepository.save(reserva);
+        } catch (DataIntegrityViolationException ex) {
+            log.warn("Colisión al insertar reserva para asignación {}: reintentando idempotencia",
+                    event.getIdAsignacion());
+            return resolverRespuestaIdempotente(event, claveIdempotencia)
+                    .orElse(VehicleAssignmentResult.builder()
+                            .success(false)
+                            .idAsignacion(event.getIdAsignacion())
+                            .motivo("Conflicto de concurrencia al confirmar la asignación")
+                            .build());
+        }
 
         log.info("Asignación confirmada vía Kafka: vehículo {} para asignación {}",
                 vehiculo.getNumeroPlaca(), event.getIdAsignacion());
@@ -348,5 +402,59 @@ public class SagaServiceImpl implements SagaService {
                 .idAsignacion(event.getIdAsignacion())
                 .idVehiculo(vehiculo.getIdVehiculo())
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public VehicleAssignmentResult procesarSolicitudAsignacion(VehicleRequestEvent event) {
+        if (event.getIdSaga() == null || event.getIdAsignacion() == null) {
+            return VehicleAssignmentResult.builder()
+                    .success(false)
+                    .idAsignacion(event != null ? event.getIdAsignacion() : null)
+                    .motivo("Evento incompleto: idSaga e idAsignacion son obligatorios")
+                    .build();
+        }
+
+        if (event.getTipoVehiculo() == null || event.getTipoVehiculo().isBlank()) {
+            return VehicleAssignmentResult.builder()
+                    .success(false)
+                    .idAsignacion(event.getIdAsignacion())
+                    .motivo("tipoVehiculo es obligatorio")
+                    .build();
+        }
+
+        if (event.getFechaInicio() == null || event.getFechaFin() == null
+                || !event.getFechaFin().isAfter(event.getFechaInicio())) {
+            return VehicleAssignmentResult.builder()
+                    .success(false)
+                    .idAsignacion(event.getIdAsignacion())
+                    .motivo("Rango de fechas inválido: fechaFin debe ser posterior a fechaInicio")
+                    .build();
+        }
+
+        String claveIdempotencia = event.getIdSaga().toString();
+
+        Optional<VehicleAssignmentResult> idempotente = resolverRespuestaIdempotente(event, claveIdempotencia);
+        if (idempotente.isPresent()) {
+            return idempotente.get();
+        }
+
+        LocalDateTime fechaInicio = event.getFechaInicio().atStartOfDay();
+        LocalDateTime fechaFin = event.getFechaFin().atTime(23, 59, 59);
+
+        List<Vehiculo> candidatos = vehicleRepository
+                .findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase(event.getTipoVehiculo());
+
+        Optional<Vehiculo> vehiculoAsignable = asignarConLock(candidatos, fechaInicio, fechaFin);
+
+        if (vehiculoAsignable.isEmpty()) {
+            return VehicleAssignmentResult.builder()
+                    .success(false)
+                    .idAsignacion(event.getIdAsignacion())
+                    .motivo("Sin vehículos disponibles del tipo " + event.getTipoVehiculo())
+                    .build();
+        }
+
+        return crearReservaConfirmada(vehiculoAsignable.get(), event, claveIdempotencia, fechaInicio, fechaFin);
     }
 }

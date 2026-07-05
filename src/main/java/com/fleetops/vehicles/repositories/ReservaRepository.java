@@ -183,4 +183,10 @@ public interface ReservaRepository extends JpaRepository<ReservaVehiculo, UUID> 
     // =====================================================================================
     boolean existsByIdAsignacionExt(UUID idAsignacionExt);
 
+    @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo", "sagaVehiculo"})
+    Optional<ReservaVehiculo> findByClaveIdempotencia(String claveIdempotencia);
+
+    @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo", "sagaVehiculo"})
+    Optional<ReservaVehiculo> findByIdAsignacionExt(UUID idAsignacionExt);
+
 }
