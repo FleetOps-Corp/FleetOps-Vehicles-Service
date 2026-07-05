@@ -12,4 +12,7 @@ public final class KafkaTopics {
 
     public static final String VEHICLE_FAILED =
             "fleetops.asignaciones.vehiculo.fallido";
+
+    public static final String ASSIGNMENT_COMPLETED =
+        "fleetops.asignaciones.completada";
 }

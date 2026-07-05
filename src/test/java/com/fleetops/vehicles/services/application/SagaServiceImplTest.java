@@ -442,4 +442,56 @@ class SagaServiceImplTest {
             org.springframework.security.core.context.SecurityContextHolder.clearContext();
         }
     }
+
+    @Test
+    void confirmarReservaPorAsignacionConfirmaReservaYSaga() {
+
+        // Arrange
+        ReservaVehiculo reserva = TestDataFactory.reserva(
+                vehiculo,
+                EstadoReserva.PENDIENTE
+        );
+
+        SagaVehiculo saga = new SagaVehiculo();
+        saga.setEstadoSaga(EstadoSaga.EN_PROGRESO);
+
+        reserva.setSagaVehiculo(saga);
+        reserva.setIdAsignacionExt(UUID.randomUUID());
+
+        when(reservaRepository.findByIdAsignacionExt(reserva.getIdAsignacionExt()))
+                .thenReturn(Optional.of(reserva));
+
+        when(reservaRepository.save(any(ReservaVehiculo.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        when(sagaRepository.save(any(SagaVehiculo.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        service.confirmarReservaPorAsignacion(reserva.getIdAsignacionExt());
+
+        // Assert
+        assertEquals(EstadoReserva.CONFIRMADA, reserva.getEstadoReserva());
+        assertEquals(EstadoSaga.COMPLETADA, saga.getEstadoSaga());
+
+        verify(reservaRepository).save(reserva);
+        verify(sagaRepository).save(saga);
+    }
+
+    @Test
+    void confirmarReservaPorAsignacionLanzaExcepcionSiNoExiste() {
+
+        UUID idAsignacion = UUID.randomUUID();
+
+        when(reservaRepository.findByIdAsignacionExt(idAsignacion))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                ResourceNotFoundException.class,
+                () -> service.confirmarReservaPorAsignacion(idAsignacion)
+        );
+
+        verify(reservaRepository).findByIdAsignacionExt(idAsignacion);
+        verifyNoMoreInteractions(sagaRepository);
+    }
 }

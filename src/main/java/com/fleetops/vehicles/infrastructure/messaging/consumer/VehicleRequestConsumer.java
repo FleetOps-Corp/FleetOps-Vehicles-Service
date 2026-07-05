@@ -24,7 +24,8 @@ public class VehicleRequestConsumer {
 
     @KafkaListener(
             topics = KafkaTopics.VEHICLE_REQUEST,
-            groupId = "${spring.kafka.consumer.group-id}"
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "vehicleRequestKafkaListenerContainerFactory"
     )
     public void receiveVehicleRequest(VehicleRequestEvent event){
 

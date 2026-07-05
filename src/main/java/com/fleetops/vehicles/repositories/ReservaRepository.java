@@ -36,6 +36,9 @@ public interface ReservaRepository extends JpaRepository<ReservaVehiculo, UUID> 
     @Override
     Optional<ReservaVehiculo> findById(UUID id);
 
+    Optional<ReservaVehiculo>
+        findByIdAsignacionExt(UUID idAsignacionExt);
+
     // @Query: Define una consulta personalizada en lenguaje JPQL.
     // Buscamos una reserva específica para un vehículo que aún no ha sido aprobada.
     @Query("SELECT r FROM ReservaVehiculo r WHERE r.vehiculo.idVehiculo = :idVehiculo AND r.estadoReserva = 'PENDIENTE'")

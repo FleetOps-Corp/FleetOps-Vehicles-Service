@@ -119,34 +119,6 @@ public class SagaServiceImpl implements SagaService {
             );
 
         }
-        // if (vehiculo.getEstadoVehiculo() != EstadoVehiculo.DISPONIBLE) {
-
-        //     // 🌟 NUEVA LÓGICA: Determinamos el mensaje exacto según el estado real
-        //     String mensajeError = "";
-        //     switch (vehiculo.getEstadoVehiculo()) {
-        //         case FUERA_DE_SERVICIO:
-        //             mensajeError = "El vehículo no está disponible, está fuera de servicio.";
-        //             break;
-        //         case EN_MANTENIMIENTO:
-        //             mensajeError = "El vehículo no está disponible, está en mantenimiento.";
-        //             break;
-        //         default:
-        //             break;
-        //     }
-
-        //     // Consultamos la base de datos para ver si tiene viajes programados
-        //     List<EstadoReserva> estadosOcupados = List.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA);
-        //     List<ReservaVehiculo> reservasActivas = reservaRepository
-        //             .findByVehiculo_IdVehiculoAndEstadoReservaIn(vehiculo.getIdVehiculo(), estadosOcupados);
-
-        //     List<AgendaReservaResponse> agenda = reservasActivas.stream()
-        //             .map(r -> new AgendaReservaResponse(r.getFechaInicio(), r.getFechaFin(),
-        //                     r.getEstadoReserva().name()))
-        //             .toList();
-
-        //     // Lanzamos la excepción inyectando el texto que calculamos en el switch
-        //     throw new ReservaConflictException(mensajeError, agenda);
-        // }
 
         // 4. Validar Solapamiento de Fechas
         List<ReservaVehiculo> conflictos = reservaRepository.obtenerReservasConflictivas(
@@ -725,6 +697,49 @@ public class SagaServiceImpl implements SagaService {
                 .idAsignacion(event.getIdAsignacion())
                 .idVehiculo(vehiculo.getIdVehiculo())
                 .build();
+
+    }
+
+    @Override
+    @Transactional
+    public void confirmarReservaPorAsignacion(UUID idAsignacion) {
+
+        ReservaVehiculo reserva = reservaRepository
+                .findByIdAsignacionExt(idAsignacion)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Reserva",
+                                "idAsignacion",
+                                idAsignacion));
+
+        //confirmarReserva(reserva.getIdReserva());
+        SagaVehiculo saga = reserva.getSagaVehiculo();
+
+        if (saga != null && saga.getEstadoSaga() != EstadoSaga.EN_PROGRESO) {
+            throw new BusinessException(
+                    "El proceso de reserva no se encuentra en un estado válido para ser confirmado. Estado actual: "
+                            + saga.getEstadoSaga());
+        }
+
+        reserva.setEstadoReserva(EstadoReserva.CONFIRMADA);
+        reserva.setActualizadoEn(LocalDateTime.now());
+        reservaRepository.save(reserva);
+
+        if (saga != null) {
+            saga.setEstadoSaga(EstadoSaga.COMPLETADA);
+            saga.setActualizadoEn(LocalDateTime.now());
+            sagaRepository.save(saga);
+            log.info(
+                "Saga {} marcada como COMPLETADA.",
+                saga.getIdSaga()
+            );
+        }
+
+        log.info(
+            "Reserva {} confirmada exitosamente para la asignación {}.",
+            reserva.getIdReserva(),
+            idAsignacion
+        );
 
     }
 }

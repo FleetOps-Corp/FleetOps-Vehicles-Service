@@ -47,6 +47,8 @@ public interface SagaService {
     // ventana del viaje.
     Optional<ReservaResponse> confirmarReserva(UUID idReserva);
 
+    void confirmarReservaPorAsignacion(UUID idAsignacion);
+
     // Método para confirmar una reserva utilizando la placa, facilitando la
     // operación rápida.
     List<ReservaResponse> confirmarReservaPorPlaca(String numeroPlaca);
@@ -137,5 +139,6 @@ public interface SagaService {
     VehicleAssignmentResult procesarSolicitudAsignacion(
         VehicleRequestEvent event
     );
+    
 
 }
