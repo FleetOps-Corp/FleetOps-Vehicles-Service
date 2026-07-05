@@ -6,6 +6,7 @@ package com.fleetops.vehicles.services.application;
 import com.fleetops.vehicles.exception.BusinessException;
 import com.fleetops.vehicles.exception.ReservaConflictException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
+import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleRequestEvent;
 import com.fleetops.vehicles.mapper.DtoMapperReserva;
 import com.fleetops.vehicles.mapper.DtoMapperSaga;
 import com.fleetops.vehicles.models.entities.*;
@@ -14,6 +15,7 @@ import com.fleetops.vehicles.dto.request.UpdateReservaDatesRequest;
 import com.fleetops.vehicles.dto.response.AgendaReservaResponse;
 import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.dto.response.SagaResponse;
+import com.fleetops.vehicles.dto.response.VehicleAssignmentResult;
 import com.fleetops.vehicles.repositories.*;
 import com.fleetops.vehicles.services.domain.IdempotencyValidator;
 
@@ -615,5 +617,14 @@ public class SagaServiceImpl implements SagaService {
         return sagaRepository
                 .findByVehiculo_NumeroPlacaIgnoreCaseAndEstadoSagaOrderByCreadoEnDesc(placa, estado, pageable)
                 .map(dtoMapperSaga::toDto);
+    }
+
+    @Override
+    @Transactional
+    public VehicleAssignmentResult procesarSolicitudAsignacion(
+        VehicleRequestEvent event) {
+
+        throw new UnsupportedOperationException(
+            "Pendiente implementación");
     }
 }
