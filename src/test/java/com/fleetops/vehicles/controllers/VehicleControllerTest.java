@@ -114,18 +114,10 @@ class VehicleControllerTest {
     @Test
     void reservasYSagasEndpoints() {
         ReservaResponse reserva = mock(ReservaResponse.class);
-        when(reserva.numeroPlaca()).thenReturn("ABC123");
-        when(reserva.idAsignacionExt()).thenReturn(UUID.randomUUID().toString());
-        when(reserva.idVehiculo()).thenReturn(UUID.randomUUID());
         SagaResponse saga = mock(SagaResponse.class);
         UUID id = UUID.randomUUID();
         var pageable = PageRequest.of(0, 10);
 
-        when(sagaService.iniciarReserva(any(), any())).thenReturn(reserva);
-        when(sagaService.iniciarReservaByPlaca(anyString(), any())).thenReturn(reserva);
-        when(sagaService.confirmarReserva(any())).thenReturn(Optional.of(reserva));
-        when(sagaService.confirmarReservaPorPlaca(anyString())).thenReturn(List.of(reserva));
-        when(sagaService.actualizarFechasReserva(any(), any())).thenReturn(reserva);
         when(sagaService.findReservaById(any())).thenReturn(Optional.of(reserva));
         when(sagaService.compensarPorReservaId(any(), anyString())).thenReturn(reserva);
         when(sagaService.cancelarReservasPorPlaca(anyString(), anyString())).thenReturn(List.of(reserva));
@@ -145,15 +137,6 @@ class VehicleControllerTest {
         when(sagaService.findSagasByPlaca(anyString(), any())).thenReturn(new PageImpl<>(List.of()));
         when(sagaService.findSagasByPlacaAndEstado(anyString(), any(), any())).thenReturn(new PageImpl<>(List.of()));
 
-        ReservaRequest request = TestDataFactory.reservaRequest();
-        assertEquals(HttpStatus.CREATED, controller.iniciarReserva(id, request).getStatusCode());
-        assertEquals(HttpStatus.CREATED, controller.iniciarReservaByPlaca("ABC123", request).getStatusCode());
-        assertEquals(HttpStatus.OK, controller.confirmarReserva(id).getStatusCode());
-        assertEquals(HttpStatus.OK, controller.confirmarReservaPorPlaca("ABC123").getStatusCode());
-
-        UpdateReservaDatesRequest dates = new UpdateReservaDatesRequest(
-                LocalDateTime.now().plusDays(1), LocalDateTime.now().plusDays(2));
-        assertEquals(HttpStatus.OK, controller.actualizarFechasReserva(id, dates).getStatusCode());
         assertEquals(HttpStatus.OK, controller.obtenerReserva(id).getStatusCode());
         assertEquals(HttpStatus.OK, controller.compensarReserva(id, "motivo").getStatusCode());
         assertEquals(HttpStatus.OK, controller.compensarReservasMasivas("ABC123", "motivo").getStatusCode());
@@ -173,15 +156,11 @@ class VehicleControllerTest {
         assertEquals(HttpStatus.OK, controller.getSagasFallidas(pageable).getStatusCode());
         assertEquals(HttpStatus.OK, controller.getSagasCompensadas(pageable).getStatusCode());
         assertEquals(HttpStatus.OK, controller.getSagasByPlaca("ABC123", pageable).getStatusCode());
-        assertEquals(HttpStatus.OK, controller.getSagasByPlacaAndEstado("ABC123", EstadoSaga.EN_PROGRESO, pageable).getStatusCode());
+        assertEquals(HttpStatus.OK, controller.getSagasByPlacaAndEstado("ABC123", EstadoSaga.COMPLETADA, pageable).getStatusCode());
     }
 
     @Test
-    void confirmarReservaNotFoundYSoftDeleteFalse() {
-        when(sagaService.confirmarReserva(any())).thenReturn(Optional.empty());
-        assertEquals(HttpStatus.NOT_FOUND, controller.confirmarReserva(UUID.randomUUID()).getStatusCode());
-
-        when(sagaService.findReservaById(any())).thenReturn(Optional.empty());
+    void obtenerReservaNotFoundYSoftDeleteFalse() {
         assertEquals(HttpStatus.NOT_FOUND, controller.obtenerReserva(UUID.randomUUID()).getStatusCode());
 
         when(vehicleService.softDelete(any())).thenReturn(false);

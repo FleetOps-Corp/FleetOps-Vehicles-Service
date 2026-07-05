@@ -23,7 +23,7 @@ class VehicleMetricsTest {
         VehicleRepository repository = mock(VehicleRepository.class);
         List<Object[]> initial = List.<Object[]>of(
                 new Object[]{EstadoVehiculo.DISPONIBLE, 5L},
-                new Object[]{EstadoVehiculo.RESERVADO, 2L});
+                new Object[]{EstadoVehiculo.EN_MANTENIMIENTO, 2L});
         when(repository.countActiveGroupByEstado()).thenReturn(initial);
 
         MeterRegistry registry = new SimpleMeterRegistry();
@@ -35,11 +35,11 @@ class VehicleMetricsTest {
                 .value();
         assertEquals(5.0, disponible);
 
-        Double reservado = registry.get("fleetops_vehiculos_por_estado")
-                .tag("estado", "reservado")
+        Double mantenimiento = registry.get("fleetops_vehiculos_por_estado")
+                .tag("estado", "en_mantenimiento")
                 .gauge()
                 .value();
-        assertEquals(2.0, reservado);
+        assertEquals(2.0, mantenimiento);
 
         // Segunda lectura dentro del TTL no debe volver a consultar la BD.
         registry.get("fleetops_vehiculos_por_estado").tag("estado", "disponible").gauge().value();
@@ -47,7 +47,7 @@ class VehicleMetricsTest {
 
         // Estado sin filas en el GROUP BY usa default 0.
         assertEquals(0.0, registry.get("fleetops_vehiculos_por_estado")
-                .tag("estado", "en_mantenimiento").gauge().value());
+                .tag("estado", "fuera_de_servicio").gauge().value());
 
         // Expirar caché fuerza un nuevo refresh.
         ReflectionTestUtils.setField(metrics, "lastRefreshMs", 0L);

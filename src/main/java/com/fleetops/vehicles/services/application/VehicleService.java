@@ -33,7 +33,7 @@ public interface VehicleService {
     // Filtra la base de datos para traer únicamente vehículos disponibles para reserva.
     Page<VehicleResponse> findDisponibles(Pageable pageable);
 
-    // Filtra para traer los vehículos bloqueados por una reserva activa.
+    // Filtra para traer vehículos con reserva CONFIRMADA activa en este momento.
     Page<VehicleResponse> findReservados(Pageable pageable);
 
     // Filtra para traer los vehículos que están en taller.

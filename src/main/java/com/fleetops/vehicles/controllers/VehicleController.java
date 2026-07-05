@@ -21,8 +21,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.List;
 import java.util.UUID;
@@ -496,13 +494,8 @@ public class VehicleController {
     // @GetMapping("/reservados"): Mapea peticiones GET destinadas a visualizar los
     // camiones comprometidos comercialmente.
     @GetMapping("/reservados")
-    // @Operation: Mapea la documentación interactiva (Nota: Aunque la descripción
-    // original se repitió, este endpoint expone activos bloqueados por viajes).
-    @Operation(summary = "Inventario de línea activa", description = "Punto de anclaje para cuadros de mando rápidos visualizando inventario ocioso.")
+    @Operation(summary = "Vehículos con reserva activa", description = "Lista vehículos operativos con una reserva CONFIRMADA vigente en este momento (ocupación por calendario, no por estado).")
     public ResponseEntity<Page<VehicleResponse>> findReservados(Pageable pageable) {
-
-        // Solicita al servicio la lista paginada de vehículos en estado 'RESERVADO' y
-        // responde HTTP 200 (OK).
         return ResponseEntity.ok(vehicleService.findReservados(pageable));
     }
 
@@ -680,130 +673,9 @@ public class VehicleController {
     }
 
     // =====================================================
-    // ==================== RESERVAS (SAGA) ===============
+    // ==================== RESERVAS (consulta / compensación) ===============
+    // Las asignaciones se crean exclusivamente vía eventos Kafka (fleetops.vehiculos.solicitar).
     // =====================================================
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // PATRÓN DE DISEÑO APLICADO: Orchestration Saga (Saga Orquestada).
-    // ¿Qué hace? Permite reservar algo en varios sistemas al mismo tiempo.
-    // Ejemplo: Como comprar boletos de avión por Despegar. Primero Despegar
-    // "bloquea" tus
-    // sillas (iniciarReserva), luego te cobra en el banco, y si todo sale bien, te
-    // imprime los boletos (confirmarReserva). Si tu tarjeta falla, libera las
-    // sillas (compensarReserva).
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    // =========================================================================
-    // ORQUESTACIÓN DE MICROSERVICIOS: PATRÓN SAGA (DISTRIBUTED TRANSACTIONS)
-    // =========================================================================
-
-    // @PostMapping("/{id}/reservas"): Mapea la petición POST para iniciar el
-    // bloqueo de un vehículo.
-    // Paso 1 de la SAGA: Iniciar el bloqueo temporal (Estado PENDIENTE).
-    @PostMapping("/{id}/iniciar-reserva")
-    // administradores inicien reservas.
-    // @Operation: Documenta que este es el primer paso de una transacción
-    // distribuida.
-    @Operation(summary = "Comando Saga: Solicitar Bloqueo", description = "Fase 1: Crea un registro PENDIENTE sobre el activo, protegiendo las fronteras operativas ante solapamientos.")
-    public ResponseEntity<ReservaResponse> iniciarReserva(@PathVariable UUID id,
-            @Valid @RequestBody ReservaRequest request) {
-
-        // REGLA DE NEGOCIO: Seguridad e Idempotencia (Evitar doble clic).
-        // El servicio de Saga garantizará que si llegan dos peticiones concurrentes
-        // para el mismo camión,
-        // solo la primera logrará bloquearlo.
-        // Se retorna HTTP 201 (CREATED) indicando que el "Expediente de Reserva" fue
-        // creado con éxito.
-        return ResponseEntity.status(HttpStatus.CREATED).body(sagaService.iniciarReserva(id, request));
-    }
-
-    // @PostMapping("/placa/{placa}/reservas"): Variante operativa para iniciar la
-    // Saga usando la placa comercial.
-    @PostMapping("/placa/{placa}/iniciar-reserva")
-    // @Operation: Documenta que facilita la integración con sistemas satélite (ej.
-    // lectores de patio).
-    @Operation(summary = "Comando Saga: Solicitar Bloqueo mediante placa", description = "Atajo logístico (HU11) para bloquear temporalmente el vehículo desde sistemas satélite de bodega.")
-    public ResponseEntity<ReservaResponse> iniciarReservaByPlaca(@PathVariable String placa,
-            @Valid @RequestBody ReservaRequest request) {
-
-        // Delega el inicio de la orquestación al servicio usando la placa y retorna
-        // HTTP 201 (CREATED).
-        return ResponseEntity.status(HttpStatus.CREATED).body(sagaService.iniciarReservaByPlaca(placa, request));
-    }
-
-    // =========================================================================
-    // SAGA COMMIT: CONFIRMACIÓN DEFINITIVA
-    // =========================================================================
-
-    // @PostMapping("/reservas/{reservaId}/confirmar"): Endpoint para consolidar la
-    // transacción si todos los microservicios tuvieron éxito.
-    // Paso 2 (FINAL) de la SAGA: Asentar permanentemente la reserva.
-    @PostMapping("/reservas/{reservaId}/confirmar")
-    @Operation(summary = "Comando Saga: Consolidación (Commit)", description = "Fase Final: Asienta definitivamente la reserva si la ventana operativa de tiempo es legal.")
-    // Retorna un Map<String, Object> para construir un JSON dinámico y altamente
-    // personalizado.
-    public ResponseEntity<Map<String, Object>> confirmarReserva(@PathVariable UUID reservaId) {
-
-        // Ejecutamos la lógica de confirmación (Commit) que pasará la reserva de
-        // PENDIENTE a CONFIRMADA. Ahora recibe un ReservaResponse (DTO Record).
-        return sagaService.confirmarReserva(reservaId).map(reserva -> {
-
-            // ARQUITECTURA DE RESPUESTA: Uso de LinkedHashMap.
-            // A diferencia de un HashMap normal, LinkedHashMap garantiza que las llaves del
-            // JSON
-            // se impriman exactamente en el orden en que las insertamos.
-            Map<String, Object> response = new LinkedHashMap<>();
-
-            // Accedemos a los datos directamente a través de los métodos del Record
-            // inmutable.
-            response.put("message",
-                    "La reserva del vehículo con placa " + reserva.numeroPlaca() + " ha sido confirmada con éxito.");
-            response.put("idAsignacionExt", reserva.idAsignacionExt());
-            response.put("idVehiculo", reserva.idVehiculo());
-            response.put("numeroPlaca", reserva.numeroPlaca());
-            response.put("timestamp", LocalDateTime.now().toString());
-
-            // Retorna HTTP 200 (OK) con la estructura ensamblada.
-            return ResponseEntity.ok(response);
-
-            // Si la reserva no existe para confirmar, retorna HTTP 404 (Not Found).
-        }).orElse(ResponseEntity.notFound().build());
-    }
-
-    // @PostMapping("/reservas/placa/{numeroPlaca}/confirmar"): Commit de la saga
-    // apuntando a la llave natural (placa).
-
-    // Endpoint para confirmar todas las reservas pendientes de una placa de golpe
-    @PostMapping("/placa/{numeroPlaca}/reservas/confirmar")
-    @Operation(summary = "Comando Masivo: Consolidación por Placa", description = "Confirma de una sola vez todas las reservas que se encuentren PENDIENTES para un vehículo específico.")
-    public ResponseEntity<Map<String, Object>> confirmarReservaPorPlaca(@PathVariable String numeroPlaca) {
-
-        // Llamamos al servicio. Nos devuelve la lista de DTOs ya armada.
-        List<ReservaResponse> reservasConfirmadas = sagaService.confirmarReservaPorPlaca(numeroPlaca);
-
-        // Armamos un JSON dinámico para mayor claridad en el Frontend
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("message", "Se confirmaron exitosamente " + reservasConfirmadas.size()
-                + " reserva(s) para el vehículo " + numeroPlaca.toUpperCase());
-        response.put("placa", numeroPlaca.toUpperCase());
-        response.put("timestamp", LocalDateTime.now().toString());
-
-        // Aquí pasamos la lista completa de reservas confirmadas
-        response.put("reservasAfectadas", reservasConfirmadas);
-
-        return ResponseEntity.ok(response);
-    }
-
-    @PutMapping("/reservas/{idReserva}/fechas")
-    @Operation(summary = "Actualizar fechas de una reserva", description = "Modifica el rango de tiempo de una reserva validando colisiones a través del servicio orquestador de Sagas.")
-    public ResponseEntity<ReservaResponse> actualizarFechasReserva(
-            @PathVariable UUID idReserva,
-            @Valid @RequestBody UpdateReservaDatesRequest request) {
-
-        // Delegación directa a la capa de Sagas
-        ReservaResponse response = sagaService.actualizarFechasReserva(idReserva, request);
-        return ResponseEntity.ok(response);
-    }
 
     // =========================================================================
     // CONSULTA DE ESTADO DE LA SAGA (POLLING)

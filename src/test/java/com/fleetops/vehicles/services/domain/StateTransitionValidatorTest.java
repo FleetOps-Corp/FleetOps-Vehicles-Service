@@ -17,9 +17,8 @@ class StateTransitionValidatorTest {
 
     @Test
     void permiteTransicionesValidas() {
-        assertTrue(validator.isValidTransition(EstadoVehiculo.DISPONIBLE, EstadoVehiculo.RESERVADO));
         assertTrue(validator.isValidTransition(EstadoVehiculo.DISPONIBLE, EstadoVehiculo.EN_MANTENIMIENTO));
-        assertTrue(validator.isValidTransition(EstadoVehiculo.RESERVADO, EstadoVehiculo.DISPONIBLE));
+        assertTrue(validator.isValidTransition(EstadoVehiculo.DISPONIBLE, EstadoVehiculo.FUERA_DE_SERVICIO));
         assertTrue(validator.isValidTransition(EstadoVehiculo.EN_MANTENIMIENTO, EstadoVehiculo.DISPONIBLE));
         assertTrue(validator.isValidTransition(EstadoVehiculo.FUERA_DE_SERVICIO, EstadoVehiculo.DISPONIBLE));
     }
@@ -33,14 +32,14 @@ class StateTransitionValidatorTest {
     void rechazaNulosYTransicionesInvalidas() {
         assertFalse(validator.isValidTransition(null, EstadoVehiculo.DISPONIBLE));
         assertFalse(validator.isValidTransition(EstadoVehiculo.DISPONIBLE, null));
-        assertFalse(validator.isValidTransition(EstadoVehiculo.EN_MANTENIMIENTO, EstadoVehiculo.RESERVADO));
-        assertFalse(validator.isValidTransition(EstadoVehiculo.FUERA_DE_SERVICIO, EstadoVehiculo.RESERVADO));
+        assertFalse(validator.isValidTransition(EstadoVehiculo.FUERA_DE_SERVICIO, EstadoVehiculo.EN_MANTENIMIENTO));
+        assertTrue(validator.isValidTransition(EstadoVehiculo.EN_MANTENIMIENTO, EstadoVehiculo.FUERA_DE_SERVICIO));
     }
 
     @Test
     void validateTransitionLanzaExcepcionCuandoEsInvalida() {
         assertThrows(IllegalStateException.class,
-                () -> validator.validateTransition(EstadoVehiculo.EN_MANTENIMIENTO, EstadoVehiculo.RESERVADO));
+                () -> validator.validateTransition(EstadoVehiculo.FUERA_DE_SERVICIO, EstadoVehiculo.EN_MANTENIMIENTO));
     }
 
     @Test

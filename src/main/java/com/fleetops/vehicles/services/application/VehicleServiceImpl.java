@@ -190,13 +190,8 @@ public class VehicleServiceImpl implements VehicleService {
     @Override
     @Transactional(readOnly = true)
     public Page<VehicleResponse> findReservados(Pageable pageable) {
-        // Método que trae la lista paginada de vehículos que tienen un viaje asignado.
-
-        // Registra la acción en la consola.
-        log.debug("Consultando vehículos reservados");
-
-        // Filtra los que están 'RESERVADO' y son 'Activos'.
-        return vehicleRepository.findAllByEstadoVehiculoAndActivoTrue(EstadoVehiculo.RESERVADO, pageable)
+        log.debug("Consultando vehículos con reserva CONFIRMADA activa en este momento");
+        return vehicleRepository.findAllWithActiveReservation(LocalDateTime.now(), pageable)
                 .map(dtoMapperVehicle::toDto);
     }
 
@@ -552,8 +547,8 @@ public class VehicleServiceImpl implements VehicleService {
                         !ahora.isBefore(reserva.getFechaInicio()) &&
                         !ahora.isAfter(reserva.getFechaFin());
 
-                // REGLA: Solo cortamos fecha si estaba RESERVADO y operando AHORA mismo
-                if (estadoAnterior == EstadoVehiculo.RESERVADO && esViajeEnCurso) {
+                // REGLA: Solo cortamos fecha si hay un viaje CONFIRMADO en curso
+                if (esViajeEnCurso) {
 
                     log.info("Corte de Viaje Activo: La reserva ID [{}] finalizará prematuramente y será cancelada.",
                             reserva.getIdReserva());
@@ -578,8 +573,7 @@ public class VehicleServiceImpl implements VehicleService {
                             + ahora.format(formatter) + " porque pasó a " + estadoDestino.name() + "].";
 
                 } else {
-                    // Para TODOS los demás casos (Futuros, Pendientes o si NO estaba RESERVADO),
-                    // cancelamos.
+                    // Futuros, pendientes o reservas aún no iniciadas: cancelación directa.
                     log.info("Cancelación de Viaje: La reserva ID [{}] se anula.", reserva.getIdReserva());
 
                     reserva.setEstadoReserva(EstadoReserva.CANCELADA);
@@ -624,12 +618,6 @@ public class VehicleServiceImpl implements VehicleService {
         }
 
         stateTransitionValidator.validateTransition(estadoActual, estadoDestino);
-
-        if (estadoActual == EstadoVehiculo.DISPONIBLE && estadoDestino == EstadoVehiculo.RESERVADO) {
-            log.warn("Intento manual bloqueado: Transición de DISPONIBLE a RESERVADO para el vehículo ID {}", id);
-            throw new BusinessException(
-                    "NO es posible pasar un vehiculo de DISPONIBLE a RESERVADO primero cree una reserva y confirmela");
-        }
 
         vehiculo.setEstadoVehiculo(estadoDestino);
 

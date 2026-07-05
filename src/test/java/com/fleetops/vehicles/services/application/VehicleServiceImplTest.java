@@ -66,7 +66,7 @@ class VehicleServiceImplTest {
         when(vehicleRepository.findAllByActivoFalse(any())).thenReturn(new PageImpl<>(List.of(vehiculo)));
         when(vehicleRepository.findAllByEstadoVehiculoAndActivoTrue(eq(EstadoVehiculo.DISPONIBLE), any()))
                 .thenReturn(new PageImpl<>(List.of(vehiculo)));
-        when(vehicleRepository.findAllByEstadoVehiculoAndActivoTrue(eq(EstadoVehiculo.RESERVADO), any()))
+        when(vehicleRepository.findAllWithActiveReservation(any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
         when(vehicleRepository.findAllByEstadoVehiculoAndActivoTrue(eq(EstadoVehiculo.EN_MANTENIMIENTO), any()))
                 .thenReturn(new PageImpl<>(List.of()));
@@ -195,15 +195,12 @@ class VehicleServiceImplTest {
 
         vehiculo.setEstadoVehiculo(EstadoVehiculo.DISPONIBLE);
         assertThrows(BusinessException.class,
-                () -> service.changeState(vehiculo.getIdVehiculo(), "RESERVADO", "manual", "ops"));
-
-        assertThrows(BusinessException.class,
                 () -> service.changeState(vehiculo.getIdVehiculo(), "NO_EXISTE", "x", "ops"));
     }
 
     @Test
     void changeStateConCascadaDeReservas() {
-        vehiculo.setEstadoVehiculo(EstadoVehiculo.RESERVADO);
+        vehiculo.setEstadoVehiculo(EstadoVehiculo.DISPONIBLE);
         ReservaVehiculo activa = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
         ReservaVehiculo futura = TestDataFactory.reserva(vehiculo, EstadoReserva.PENDIENTE);
         futura.setFechaInicio(java.time.LocalDateTime.now().plusDays(2));

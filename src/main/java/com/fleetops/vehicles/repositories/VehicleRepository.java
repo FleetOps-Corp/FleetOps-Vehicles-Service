@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.LocalDateTime;
 
 @Repository
 public interface VehicleRepository extends JpaRepository<Vehiculo, UUID> {
@@ -61,6 +62,16 @@ public interface VehicleRepository extends JpaRepository<Vehiculo, UUID> {
   long countByEstadoVehiculoAndActivoTrue(EstadoVehiculo estado);
 
   long countByTipoVehiculoAndActivoTrue(TipoVehiculo tipoVehiculo);
+
+  @EntityGraph(attributePaths = "tipoVehiculo")
+  @Query("""
+      SELECT DISTINCT v FROM Vehiculo v
+      JOIN ReservaVehiculo r ON r.vehiculo = v
+      WHERE v.activo = true
+        AND r.estadoReserva = com.fleetops.vehicles.models.entities.EstadoReserva.CONFIRMADA
+        AND :now >= r.fechaInicio AND :now <= r.fechaFin
+      """)
+  Page<Vehiculo> findAllWithActiveReservation(@Param("now") LocalDateTime now, Pageable pageable);
 
   boolean existsByNumeroPlacaIgnoreCase(String numeroPlaca);
 
