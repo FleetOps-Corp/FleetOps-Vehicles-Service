@@ -3,6 +3,8 @@
 Documento de integración entre **Asignaciones** (`develop`) y **Vehículos**.  
 Última actualización: julio 2026.
 
+**Evolución del contrato:** [contrato-a-plus-vs-dos-pasos.md](contrato-a-plus-vs-dos-pasos.md) — comparación con el contrato dos pasos y motivos de la adopción de A+.
+
 ---
 
 ## Resumen
