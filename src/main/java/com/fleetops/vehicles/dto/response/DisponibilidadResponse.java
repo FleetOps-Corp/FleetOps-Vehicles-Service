@@ -31,4 +31,4 @@ public record DisponibilidadResponse(
     // Marca de tiempo exacta del cambio.
     // Ejemplo: "2026-06-19T10:00:00" (sirve para que el usuario sepa qué tan antigua es la información).
     LocalDateTime actualizadoEn
-) {}
+) { }

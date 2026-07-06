@@ -7,4 +7,4 @@ public record AgendaReservaResponse(
         LocalDateTime fechaInicio,
         LocalDateTime fechaFin,
         String estadoReserva
-) {}
+) { }

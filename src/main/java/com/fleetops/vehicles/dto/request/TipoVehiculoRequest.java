@@ -57,4 +57,4 @@ public record TipoVehiculoRequest(
         // =========================================================================================
         @Positive(message = "El campo 'capacidadCarga' debe ser mayor a 0") 
         Double capacidadCarga
-) {}
+) { }

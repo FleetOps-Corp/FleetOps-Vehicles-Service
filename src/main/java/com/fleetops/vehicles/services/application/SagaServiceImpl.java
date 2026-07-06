@@ -1,23 +1,24 @@
 package com.fleetops.vehicles.services.application;
 
 import com.fleetops.vehicles.exception.BusinessException;
-import com.fleetops.vehicles.exception.ReservaConflictException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
 import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleRequestEvent;
 import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleReleaseEvent;
 import com.fleetops.vehicles.mapper.DtoMapperReserva;
 import com.fleetops.vehicles.mapper.DtoMapperSaga;
-import com.fleetops.vehicles.models.entities.*;
-import com.fleetops.vehicles.dto.request.ReservaRequest;
-import com.fleetops.vehicles.dto.request.UpdateReservaDatesRequest;
-import com.fleetops.vehicles.dto.response.AgendaReservaResponse;
+import com.fleetops.vehicles.models.entities.EstadoReserva;
+import com.fleetops.vehicles.models.entities.EstadoSaga;
+import com.fleetops.vehicles.models.entities.ReservaVehiculo;
+import com.fleetops.vehicles.models.entities.SagaVehiculo;
+import com.fleetops.vehicles.models.entities.Vehiculo;
 import com.fleetops.vehicles.dto.response.ReservaResponse;
 import com.fleetops.vehicles.dto.response.SagaResponse;
 import com.fleetops.vehicles.dto.response.VehicleAssignmentResult;
 import com.fleetops.vehicles.dto.response.VehicleReleaseResult;
-import com.fleetops.vehicles.repositories.*;
+import com.fleetops.vehicles.repositories.ReservaRepository;
+import com.fleetops.vehicles.repositories.SagaRepository;
+import com.fleetops.vehicles.repositories.VehicleRepository;
 import com.fleetops.vehicles.services.domain.AvailabilityPolicy;
-import com.fleetops.vehicles.services.domain.IdempotencyValidator;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

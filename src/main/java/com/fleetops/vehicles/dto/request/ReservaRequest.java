@@ -79,4 +79,4 @@ public record ReservaRequest(
     // =========================================================================================
     @NotBlank(message = "La clave de idempotencia es obligatoria")
     String claveIdempotencia
-) {}
+) { }

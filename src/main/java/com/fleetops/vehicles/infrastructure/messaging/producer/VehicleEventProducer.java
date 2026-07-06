@@ -14,7 +14,7 @@ public class VehicleEventProducer {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
-    public void publishVehicleConfirmed(VehicleConfirmedEvent event){
+    public void publishVehicleConfirmed(VehicleConfirmedEvent event) {
 
         kafkaTemplate.send(
                 KafkaTopics.VEHICLE_CONFIRMED,
@@ -23,7 +23,7 @@ public class VehicleEventProducer {
 
     }
 
-    public void publishVehicleFailed(VehicleFailedEvent event){
+    public void publishVehicleFailed(VehicleFailedEvent event) {
 
         kafkaTemplate.send(
                 KafkaTopics.VEHICLE_FAILED,
