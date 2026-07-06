@@ -93,6 +93,21 @@ public class SagaVehiculo {
     @Column(name = "compensado_por", length = 100)
     private String compensadoPor;
 
+    /** true cuando llega fleetops.asignaciones.completada (ACK, no cambia la reserva). */
+    @Builder.Default
+    @Column(name = "asignaciones_ack", nullable = false)
+    private Boolean asignacionesAck = false;
+
+    /** true tras liberar por Kafka: permite un nuevo solicitar con la misma idSaga. */
+    @Builder.Default
+    @Column(name = "permite_reasignacion", nullable = false)
+    private Boolean permiteReasignacion = false;
+
+    /** Contador de republicaciones de confirmado por job de reconciliación. */
+    @Builder.Default
+    @Column(name = "reconfirmaciones", nullable = false)
+    private Integer reconfirmaciones = 0;
+
     // =========================================================================================
     // version: PATRÓN Optimistic Locking.
     // Evita la sobrescritura perdida si dos hilos intentan actualizar la misma saga al mismo tiempo.

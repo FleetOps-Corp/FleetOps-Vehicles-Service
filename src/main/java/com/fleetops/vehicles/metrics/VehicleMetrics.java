@@ -20,6 +20,7 @@ public class VehicleMetrics {
     private final ReservaRepository reservaRepository;
     private volatile Map<EstadoVehiculo, Long> countsByEstado = Map.of();
     private volatile long activeReservationsCount = 0;
+    private volatile long reservasSinAckCount = 0;
     private volatile long lastRefreshMs = 0;
 
     public VehicleMetrics(VehicleRepository vehicleRepository, ReservaRepository reservaRepository,
@@ -38,6 +39,15 @@ public class VehicleMetrics {
         Gauge.builder("fleetops_reservas_activas", this, VehicleMetrics::activeReservations)
                 .description("Reservas CONFIRMADAS en curso (fecha actual dentro del rango de la reserva)")
                 .register(meterRegistry);
+
+        Gauge.builder("fleetops_reservas_sin_ack_asignaciones", this, VehicleMetrics::reservasSinAck)
+                .description("Reservas CONFIRMADAS sin ACK de Asignaciones (completada)")
+                .register(meterRegistry);
+    }
+
+    private double reservasSinAck() {
+        ensureFresh();
+        return reservasSinAckCount;
     }
 
     private double countFor(EstadoVehiculo estado) {
@@ -70,6 +80,7 @@ public class VehicleMetrics {
         }
         countsByEstado = Map.copyOf(fresh);
         activeReservationsCount = reservaRepository.countCurrentlyActiveReservations(LocalDateTime.now());
+        reservasSinAckCount = reservaRepository.countConfirmadasSinAck();
         lastRefreshMs = System.currentTimeMillis();
     }
 }

@@ -16,7 +16,17 @@ import java.util.UUID;
 
 public interface SagaService {
 
-    void confirmarReservaPorAsignacion(UUID idAsignacion);
+    /**
+     * Registra el ACK de Asignaciones vía {@code fleetops.asignaciones.completada}.
+     * No modifica el estado de la reserva (ya está CONFIRMADA en contrato A+).
+     */
+    void registrarAckAsignacion(UUID idAsignacion);
+
+    /** @deprecated usar {@link #registrarAckAsignacion(UUID)} */
+    @Deprecated
+    default void confirmarReservaPorAsignacion(UUID idAsignacion) {
+        registrarAckAsignacion(idAsignacion);
+    }
     
     ReservaResponse compensarPorReservaId(UUID reservaId, String motivo);
 
@@ -60,4 +70,7 @@ public interface SagaService {
     VehicleAssignmentResult procesarSolicitudAsignacion(VehicleRequestEvent event);
 
     VehicleReleaseResult procesarLiberacionAsignacion(VehicleReleaseEvent event);
+
+    /** Incrementa el contador de reintentos de publicación de confirmado. */
+    void incrementarReconfirmacion(UUID idReserva);
 }

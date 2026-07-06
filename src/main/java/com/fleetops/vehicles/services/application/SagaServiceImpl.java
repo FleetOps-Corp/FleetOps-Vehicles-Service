@@ -315,6 +315,13 @@ public class SagaServiceImpl implements SagaService {
                     .build());
         }
 
+        if (reserva.getEstadoReserva() == EstadoReserva.CANCELADA && esReasignacionPermitida(reserva)) {
+            log.info("Reasignación permitida para saga {}: archivando reserva cancelada previa",
+                    reserva.getSagaVehiculo() != null ? reserva.getSagaVehiculo().getIdSaga() : null);
+            archivarReservaParaReasignacion(reserva);
+            return Optional.empty();
+        }
+
         String motivo = switch (reserva.getEstadoReserva()) {
             case CANCELADA -> "La asignación fue cancelada previamente";
             case FALLIDA -> "La asignación falló previamente";
@@ -360,7 +367,29 @@ public class SagaServiceImpl implements SagaService {
         return Optional.empty();
     }
 
-    private VehicleAssignmentResult crearReservaPendiente(
+    private boolean esReasignacionPermitida(ReservaVehiculo reserva) {
+        SagaVehiculo saga = reserva.getSagaVehiculo();
+        return saga != null
+                && saga.getEstadoSaga() == EstadoSaga.COMPENSADA
+                && Boolean.TRUE.equals(saga.getPermiteReasignacion());
+    }
+
+    private void archivarReservaParaReasignacion(ReservaVehiculo reserva) {
+        String sufijo = "#arch-" + UUID.randomUUID();
+        reserva.setClaveIdempotencia(reserva.getClaveIdempotencia() + sufijo);
+        reserva.setActualizadoEn(LocalDateTime.now());
+        reservaRepository.save(reserva);
+
+        SagaVehiculo saga = reserva.getSagaVehiculo();
+        if (saga != null) {
+            saga.setClaveIdempotencia(saga.getClaveIdempotencia() + sufijo);
+            saga.setPermiteReasignacion(false);
+            saga.setActualizadoEn(LocalDateTime.now());
+            sagaRepository.save(saga);
+        }
+    }
+
+    private VehicleAssignmentResult crearReservaConfirmada(
             Vehiculo vehiculo,
             VehicleRequestEvent event,
             String claveIdempotencia,
@@ -370,9 +399,12 @@ public class SagaServiceImpl implements SagaService {
         SagaVehiculo saga = new SagaVehiculo();
         saga.setVehiculo(vehiculo);
         saga.setTipoOperacion("RESERVA_VEHICULO");
-        saga.setEstadoSaga(EstadoSaga.EN_PROGRESO);
+        saga.setEstadoSaga(EstadoSaga.COMPLETADA);
         saga.setClaveIdempotencia(claveIdempotencia);
         saga.setPayload(event.toString());
+        saga.setAsignacionesAck(false);
+        saga.setPermiteReasignacion(false);
+        saga.setReconfirmaciones(0);
         saga.setCreadoEn(LocalDateTime.now());
         saga.setActualizadoEn(LocalDateTime.now());
         saga = sagaRepository.save(saga);
@@ -381,7 +413,7 @@ public class SagaServiceImpl implements SagaService {
         reserva.setVehiculo(vehiculo);
         reserva.setSagaVehiculo(saga);
         reserva.setIdAsignacionExt(event.getIdAsignacion());
-        reserva.setEstadoReserva(EstadoReserva.PENDIENTE);
+        reserva.setEstadoReserva(EstadoReserva.CONFIRMADA);
         reserva.setClaveIdempotencia(claveIdempotencia);
         reserva.setSolicitadoPor("Asignaciones-Service");
         reserva.setFechaInicio(fechaInicio);
@@ -402,7 +434,7 @@ public class SagaServiceImpl implements SagaService {
                             .build());
         }
 
-        log.info("Vehículo {} reservado para la asignación {}. Esperando confirmación del microservicio de Asignaciones.",
+        log.info("Vehículo {} confirmado para la asignación {} (contrato A+).",
                 vehiculo.getNumeroPlaca(), event.getIdAsignacion());
 
         return VehicleAssignmentResult.builder()
@@ -413,7 +445,7 @@ public class SagaServiceImpl implements SagaService {
     }
 
     @Override
-    @Transactional
+    @Transactional("chainedKafkaTransactionManager")
     public VehicleAssignmentResult procesarSolicitudAsignacion(VehicleRequestEvent event) {
         if (event.getIdSaga() == null || event.getIdAsignacion() == null) {
             return VehicleAssignmentResult.builder()
@@ -463,7 +495,7 @@ public class SagaServiceImpl implements SagaService {
                     .build();
         }
 
-        return crearReservaPendiente(vehiculoAsignable.get(), event, claveIdempotencia, fechaInicio, fechaFin);
+        return crearReservaConfirmada(vehiculoAsignable.get(), event, claveIdempotencia, fechaInicio, fechaFin);
     }
 
     @Override
@@ -479,9 +511,11 @@ public class SagaServiceImpl implements SagaService {
             return VehicleReleaseResult.ignored("Debe incluir idAsignacion o idSaga");
         }
 
-        if (event.getMotivo() == null || event.getMotivo().isBlank()) {
-            log.warn("Evento de liberación inválido: motivo vacío para asignación {}", event.getIdAsignacion());
-            return VehicleReleaseResult.ignored("El motivo es obligatorio");
+        String motivo = event.getMotivo();
+        if (motivo == null || motivo.isBlank()) {
+            motivo = "Compensación solicitada por Asignaciones";
+        } else {
+            motivo = motivo.trim();
         }
 
         Optional<ReservaVehiculo> reservaOpt = Optional.empty();
@@ -493,12 +527,20 @@ public class SagaServiceImpl implements SagaService {
         }
 
         if (reservaOpt.isEmpty()) {
-            log.warn("Liberación sin reserva local (asignación={}, saga={}). Puede ser cancelación previa a confirmación.",
-                    event.getIdAsignacion(), event.getIdSaga());
+            log.warn("Liberación sin reserva local (asignación={}, saga={}, vehiculo={}).",
+                    event.getIdAsignacion(), event.getIdSaga(), event.getIdVehiculo());
             return VehicleReleaseResult.ignored("No existe reserva local para la asignación indicada");
         }
 
         ReservaVehiculo reserva = reservaOpt.get();
+
+        if (event.getIdVehiculo() != null
+                && reserva.getVehiculo() != null
+                && !event.getIdVehiculo().equals(reserva.getVehiculo().getIdVehiculo())) {
+            log.warn("Liberación: idVehiculo {} no coincide con reserva {} (vehiculo {}). Se procesa por correlación saga/asignación.",
+                    event.getIdVehiculo(), reserva.getIdReserva(), reserva.getVehiculo().getIdVehiculo());
+        }
+
         UUID idAsignacion = reserva.getIdAsignacionExt();
 
         if (reserva.getEstadoReserva() == EstadoReserva.CANCELADA) {
@@ -514,55 +556,68 @@ public class SagaServiceImpl implements SagaService {
             return VehicleReleaseResult.idempotent(idAsignacion, reserva.getIdReserva());
         }
 
-        String motivo = event.getMotivo().trim();
         if (event.getOrigen() != null && !event.getOrigen().isBlank()) {
             motivo = "[" + event.getOrigen().trim() + "] " + motivo;
         }
 
+        UUID sagaId = reserva.getSagaVehiculo() != null ? reserva.getSagaVehiculo().getIdSaga() : null;
         compensarPorReservaId(reserva.getIdReserva(), motivo);
-        log.info("Reserva {} liberada por evento Kafka (asignación {})", reserva.getIdReserva(), idAsignacion);
+
+        if (sagaId != null) {
+            sagaRepository.findById(sagaId).ifPresent(saga -> {
+                saga.setPermiteReasignacion(true);
+                saga.setActualizadoEn(LocalDateTime.now());
+                sagaRepository.save(saga);
+            });
+        }
+
+        log.info("Reserva {} liberada por evento Kafka (asignación {}). Reasignación permitida.",
+                reserva.getIdReserva(), idAsignacion);
 
         return VehicleReleaseResult.processed(idAsignacion, reserva.getIdReserva());
     }
 
-    public void confirmarReservaPorAsignacion(UUID idAsignacion) {
+    @Override
+    @Transactional
+    public void registrarAckAsignacion(UUID idAsignacion) {
+        ReservaVehiculo reserva = reservaRepository.findByIdAsignacionExt(idAsignacion)
+                .orElseThrow(() -> new ResourceNotFoundException("Reserva", "idAsignacion", idAsignacion));
 
-        ReservaVehiculo reserva = reservaRepository
-                .findByIdAsignacionExt(idAsignacion)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Reserva",
-                                "idAsignacion",
-                                idAsignacion));
-
-        //confirmarReserva(reserva.getIdReserva());
         SagaVehiculo saga = reserva.getSagaVehiculo();
-
-        if (saga != null && saga.getEstadoSaga() != EstadoSaga.EN_PROGRESO) {
-            throw new BusinessException(
-                    "El proceso de reserva no se encuentra en un estado válido para ser confirmado. Estado actual: "
-                            + saga.getEstadoSaga());
+        if (saga == null) {
+            log.warn("ACK de asignación {} sin saga local asociada", idAsignacion);
+            return;
         }
 
-        reserva.setEstadoReserva(EstadoReserva.CONFIRMADA);
-        reserva.setActualizadoEn(LocalDateTime.now());
-        reservaRepository.save(reserva);
-
-        if (saga != null) {
-            saga.setEstadoSaga(EstadoSaga.COMPLETADA);
-            saga.setActualizadoEn(LocalDateTime.now());
-            sagaRepository.save(saga);
-            log.info(
-                "Saga {} marcada como COMPLETADA.",
-                saga.getIdSaga()
-            );
+        if (Boolean.TRUE.equals(saga.getAsignacionesAck())) {
+            log.info("ACK idempotente: asignación {} ya registrada", idAsignacion);
+            return;
         }
 
-        log.info(
-            "Reserva {} confirmada exitosamente para la asignación {}.",
-            reserva.getIdReserva(),
-            idAsignacion
-        );
+        if (reserva.getEstadoReserva() != EstadoReserva.CONFIRMADA) {
+            log.warn("ACK recibido para asignación {} con reserva en estado {} (se esperaba CONFIRMADA)",
+                    idAsignacion, reserva.getEstadoReserva());
+        }
 
+        saga.setAsignacionesAck(true);
+        saga.setReconfirmaciones(0);
+        saga.setActualizadoEn(LocalDateTime.now());
+        sagaRepository.save(saga);
+
+        log.info("ACK de Asignaciones registrado para asignación {} (reserva {}).",
+                idAsignacion, reserva.getIdReserva());
+    }
+
+    @Override
+    @Transactional
+    public void incrementarReconfirmacion(UUID idReserva) {
+        reservaRepository.findById(idReserva).ifPresent(reserva -> {
+            SagaVehiculo saga = reserva.getSagaVehiculo();
+            if (saga != null) {
+                saga.setReconfirmaciones(saga.getReconfirmaciones() + 1);
+                saga.setActualizadoEn(LocalDateTime.now());
+                sagaRepository.save(saga);
+            }
+        });
     }
 }

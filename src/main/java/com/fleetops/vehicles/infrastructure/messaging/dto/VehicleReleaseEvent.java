@@ -23,6 +23,9 @@ public class VehicleReleaseEvent {
     /** Correlación con la saga distribuida (alternativa si no hay idAsignacion). */
     private UUID idSaga;
 
+    /** Vehículo afectado (payload de Asignaciones en incidentes mecánicos). */
+    private UUID idVehiculo;
+
     /** Motivo de negocio de la cancelación/liberación. */
     private String motivo;
 
