@@ -39,6 +39,54 @@ services:
       retries: 5
       start_period: 10s
 
+  # -------------------------------------------------------------------
+  # Volumen que contiene el archivo de la llave publica
+  # ------------------------------------------------------------------
+  
+  api_gateway:
+    build:
+      context: ./api_gateway
+      dockerfile: Dockerfile
+    volumes:
+      - ./api_gateway:/app
+      - ./secrets/jwt_public.pem:/run/secrets/jwt_public.pem:ro #aqui es donde se agrega el volumen
+    container_name: fleetops_api_gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
+      ROLE_SERVICE_URL: ${ROLE_SERVICE_URL}
+      JWT_ALGORITHM: ${JWT_ALGORITHM} # aqui esta el algoritmo de encriptacion
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public.pem # aqui esta la ruta de la llave publica
+      GATEWAY_RATE_LIMIT: ${GATEWAY_RATE_LIMIT}
+      GATEWAY_PORT: ${GATEWAY_PORT}
+      VEHICLES_SERVICE_URL: ${VEHICLES_SERVICE_URL}
+      ASSIGNMENTS_SERVICE_URL: ${ASSIGNMENTS_SERVICE_URL}
+      INCIDENTS_SERVICE_URL: ${INCIDENTS_SERVICE_URL}
+      MAINTENANCE_SERVICE_URL: ${MAINTENANCE_SERVICE_URL}
+      REPORTS_SERVICE_URL: ${REPORTS_SERVICE_URL}
+      LOG_LEVEL: ${LOG_LEVEL}
+    ports:
+      - "${GATEWAY_PORT}:${GATEWAY_PORT}"
+    networks:
+      - fleetops_security_net
+    depends_on:
+      auth_service:
+        condition: service_healthy
+      role_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:${GATEWAY_PORT}/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+
+
+
+
   # ---------------------------------------------------------------------------
   # vehicles-service - Microservicio Spring Boot (construido desde el Dockerfile)
   # ---------------------------------------------------------------------------
@@ -83,3 +131,4 @@ services:
       timeout: 5s
       retries: 3
       start_period: 40s
+    
