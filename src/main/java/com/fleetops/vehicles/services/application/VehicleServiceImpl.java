@@ -9,6 +9,7 @@ import com.fleetops.vehicles.models.entities.*;
 import com.fleetops.vehicles.dto.request.EstadoCambioRequest;
 import com.fleetops.vehicles.dto.request.VehicleRequest;
 import com.fleetops.vehicles.dto.request.VehicleUpdateRequest;
+import com.fleetops.vehicles.dto.response.DisponibilidadRangoResponse;
 import com.fleetops.vehicles.dto.response.DisponibilidadResponse;
 import com.fleetops.vehicles.dto.response.HistorialEstadoResponse;
 import com.fleetops.vehicles.dto.response.VehicleResponse;
@@ -22,11 +23,13 @@ import com.fleetops.vehicles.services.domain.StateTransitionValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -190,13 +193,8 @@ public class VehicleServiceImpl implements VehicleService {
     @Override
     @Transactional(readOnly = true)
     public Page<VehicleResponse> findReservados(Pageable pageable) {
-        // Método que trae la lista paginada de vehículos que tienen un viaje asignado.
-
-        // Registra la acción en la consola.
-        log.debug("Consultando vehículos reservados");
-
-        // Filtra los que están 'RESERVADO' y son 'Activos'.
-        return vehicleRepository.findAllByEstadoVehiculoAndActivoTrue(EstadoVehiculo.RESERVADO, pageable)
+        log.debug("Consultando vehículos con reserva CONFIRMADA activa en este momento");
+        return vehicleRepository.findAllWithActiveReservation(LocalDateTime.now(), pageable)
                 .map(dtoMapperVehicle::toDto);
     }
 
@@ -552,8 +550,8 @@ public class VehicleServiceImpl implements VehicleService {
                         !ahora.isBefore(reserva.getFechaInicio()) &&
                         !ahora.isAfter(reserva.getFechaFin());
 
-                // REGLA: Solo cortamos fecha si estaba RESERVADO y operando AHORA mismo
-                if (estadoAnterior == EstadoVehiculo.RESERVADO && esViajeEnCurso) {
+                // REGLA: Solo cortamos fecha si hay un viaje CONFIRMADO en curso
+                if (esViajeEnCurso) {
 
                     log.info("Corte de Viaje Activo: La reserva ID [{}] finalizará prematuramente y será cancelada.",
                             reserva.getIdReserva());
@@ -578,8 +576,7 @@ public class VehicleServiceImpl implements VehicleService {
                             + ahora.format(formatter) + " porque pasó a " + estadoDestino.name() + "].";
 
                 } else {
-                    // Para TODOS los demás casos (Futuros, Pendientes o si NO estaba RESERVADO),
-                    // cancelamos.
+                    // Futuros, pendientes o reservas aún no iniciadas: cancelación directa.
                     log.info("Cancelación de Viaje: La reserva ID [{}] se anula.", reserva.getIdReserva());
 
                     reserva.setEstadoReserva(EstadoReserva.CANCELADA);
@@ -624,12 +621,6 @@ public class VehicleServiceImpl implements VehicleService {
         }
 
         stateTransitionValidator.validateTransition(estadoActual, estadoDestino);
-
-        if (estadoActual == EstadoVehiculo.DISPONIBLE && estadoDestino == EstadoVehiculo.RESERVADO) {
-            log.warn("Intento manual bloqueado: Transición de DISPONIBLE a RESERVADO para el vehículo ID {}", id);
-            throw new BusinessException(
-                    "NO es posible pasar un vehiculo de DISPONIBLE a RESERVADO primero cree una reserva y confirmela");
-        }
 
         vehiculo.setEstadoVehiculo(estadoDestino);
 
@@ -823,6 +814,92 @@ public class VehicleServiceImpl implements VehicleService {
                 vehiculo.getEstadoVehiculo().name(),
                 disponible,
                 vehiculo.getActualizadoEn() != null ? vehiculo.getActualizadoEn() : vehiculo.getCreadoEn());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DisponibilidadRangoResponse getDisponibilidadEnRango(UUID id, LocalDate fechaInicio, LocalDate fechaFin) {
+        Vehiculo vehiculo = vehicleRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Vehículo", "id", id));
+        return evaluarDisponibilidadEnRango(vehiculo, fechaInicio, fechaFin);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DisponibilidadRangoResponse getDisponibilidadEnRangoByPlaca(String placa, LocalDate fechaInicio,
+            LocalDate fechaFin) {
+        Vehiculo vehiculo = vehicleRepository.findByNumeroPlacaIgnoreCaseAndActivoTrue(placa)
+                .orElseThrow(() -> new ResourceNotFoundException("Vehículo", "placa", placa));
+        return evaluarDisponibilidadEnRango(vehiculo, fechaInicio, fechaFin);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<VehicleResponse> findDisponiblesEnRango(String nombreTipo, LocalDate fechaInicio, LocalDate fechaFin,
+            Pageable pageable) {
+        validarRangoFechas(fechaInicio, fechaFin);
+
+        LocalDateTime inicio = fechaInicio.atStartOfDay();
+        LocalDateTime fin = fechaFin.atTime(23, 59, 59);
+
+        List<Vehiculo> candidatos = vehicleRepository
+                .findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase(nombreTipo);
+
+        List<VehicleResponse> disponibles = candidatos.stream()
+                .filter(v -> availabilityPolicy.isAssignable(v, inicio, fin))
+                .map(dtoMapperVehicle::toDto)
+                .toList();
+
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), disponibles.size());
+        List<VehicleResponse> pageContent = start >= disponibles.size()
+                ? List.of()
+                : disponibles.subList(start, end);
+
+        return new PageImpl<>(pageContent, pageable, disponibles.size());
+    }
+
+    private DisponibilidadRangoResponse evaluarDisponibilidadEnRango(Vehiculo vehiculo, LocalDate fechaInicio,
+            LocalDate fechaFin) {
+        validarRangoFechas(fechaInicio, fechaFin);
+
+        LocalDateTime inicio = fechaInicio.atStartOfDay();
+        LocalDateTime fin = fechaFin.atTime(23, 59, 59);
+
+        boolean operativo = availabilityPolicy.isOperational(vehiculo);
+        boolean documentosVigentes = availabilityPolicy.hasValidDocuments(vehiculo);
+        boolean conflictoReserva = availabilityPolicy.hasReservationConflict(vehiculo.getIdVehiculo(), inicio, fin);
+        boolean disponibleEnRango = operativo && documentosVigentes && !conflictoReserva;
+
+        String motivo = null;
+        if (!operativo) {
+            motivo = "Vehículo no operativo: " + vehiculo.getEstadoVehiculo().name();
+        } else if (!documentosVigentes) {
+            motivo = "SOAT o RTM vencidos o con vencimiento en 7 días o menos";
+        } else if (conflictoReserva) {
+            motivo = "Existe una reserva CONFIRMADA que solapa con el rango solicitado";
+        }
+
+        return new DisponibilidadRangoResponse(
+                vehiculo.getIdVehiculo(),
+                vehiculo.getNumeroPlaca(),
+                vehiculo.getEstadoVehiculo().name(),
+                operativo,
+                documentosVigentes,
+                disponibleEnRango,
+                fechaInicio,
+                fechaFin,
+                motivo,
+                LocalDateTime.now());
+    }
+
+    private void validarRangoFechas(LocalDate fechaInicio, LocalDate fechaFin) {
+        if (fechaInicio == null || fechaFin == null) {
+            throw new BusinessException("fechaInicio y fechaFin son obligatorios");
+        }
+        if (!fechaFin.isAfter(fechaInicio) && !fechaFin.isEqual(fechaInicio)) {
+            throw new BusinessException("fechaFin debe ser igual o posterior a fechaInicio");
+        }
     }
 
     // =========================================================================

@@ -4,11 +4,13 @@ package com.fleetops.vehicles.services.application;
 import com.fleetops.vehicles.dto.request.EstadoCambioRequest;
 import com.fleetops.vehicles.dto.request.VehicleRequest;
 import com.fleetops.vehicles.dto.request.VehicleUpdateRequest;
+import com.fleetops.vehicles.dto.response.DisponibilidadRangoResponse;
 import com.fleetops.vehicles.dto.response.DisponibilidadResponse;
 import com.fleetops.vehicles.dto.response.HistorialEstadoResponse;
 import com.fleetops.vehicles.dto.response.VehicleResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,7 +35,7 @@ public interface VehicleService {
     // Filtra la base de datos para traer únicamente vehículos disponibles para reserva.
     Page<VehicleResponse> findDisponibles(Pageable pageable);
 
-    // Filtra para traer los vehículos bloqueados por una reserva activa.
+    // Filtra para traer vehículos con reserva CONFIRMADA activa en este momento.
     Page<VehicleResponse> findReservados(Pageable pageable);
 
     // Filtra para traer los vehículos que están en taller.
@@ -92,6 +94,13 @@ public interface VehicleService {
 
     // Idem al anterior, pero usando placa.
     DisponibilidadResponse getDisponibilidadByPlaca(String placa);
+
+    DisponibilidadRangoResponse getDisponibilidadEnRango(UUID id, LocalDate fechaInicio, LocalDate fechaFin);
+
+    DisponibilidadRangoResponse getDisponibilidadEnRangoByPlaca(String placa, LocalDate fechaInicio, LocalDate fechaFin);
+
+    Page<VehicleResponse> findDisponiblesEnRango(String nombreTipo, LocalDate fechaInicio, LocalDate fechaFin,
+            Pageable pageable);
 
     // Búsqueda inteligente: Texto libre que ignora mayúsculas/tildes. 
     // Facilita la experiencia de usuario (ej: buscar 'camion' y encontrar 'Camión Frigorífico').
