@@ -63,7 +63,7 @@ class SagaServiceImplTest {
     }
 
     @Test
-    void procesarSolicitudAsignacionCreaReservaConfirmada() {
+    void procesarSolicitudAsignacionCreaReservaPendiente() {
         sinReservaPrevia();
         when(vehicleRepository.findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase("Camion"))
                 .thenReturn(List.of(vehiculo));
@@ -81,7 +81,12 @@ class SagaServiceImplTest {
         assertTrue(result.isSuccess());
         assertFalse(result.isIdempotentReplay());
         verify(vehicleRepository).findByIdForUpdate(vehiculo.getIdVehiculo());
-        verify(reservaRepository).save(argThat(r -> r.getEstadoReserva() == EstadoReserva.CONFIRMADA));
+        verify(reservaRepository).save(argThat(r -> r.getEstadoReserva() == EstadoReserva.PENDIENTE));
+        verify(reservaRepository).save(argThat(r ->
+            r.getEstadoReserva() == EstadoReserva.PENDIENTE &&
+            r.getSagaVehiculo() != null &&
+            r.getSagaVehiculo().getEstadoSaga() == EstadoSaga.EN_PROGRESO
+        ));
     }
 
     @Test
