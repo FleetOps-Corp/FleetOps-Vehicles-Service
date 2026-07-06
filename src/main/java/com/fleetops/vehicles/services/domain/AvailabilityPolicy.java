@@ -1,74 +1,88 @@
 package com.fleetops.vehicles.services.domain;
-// Define la carpeta del sistema donde vive este archivo. Pertenece a la capa de "Dominio" (reglas de negocio puras).
-// Ejemplo: Es como la carpeta del "Manual de Operaciones" de la empresa.
 
+import com.fleetops.vehicles.models.entities.EstadoReserva;
 import com.fleetops.vehicles.models.entities.EstadoVehiculo;
 import com.fleetops.vehicles.models.entities.Vehiculo;
+import com.fleetops.vehicles.repositories.ReservaRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.UUID;
 
-// @Slf4j: Anotación de Lombok que crea una herramienta para escribir mensajes en la bitácora del servidor.
-// Ejemplo: Nos permite registrar en la consola "El camión se rechazó por falta de SOAT".
 @Slf4j
-// @Component: Anotación de Spring que registra esta clase en la memoria central para poder reutilizarla.
-// Ejemplo: Es como contratar a un "Inspector de Calidad"; Spring lo tiene listo siempre que alguien necesite inspeccionar un camión.
 @Component
+@RequiredArgsConstructor
 public class AvailabilityPolicy {
-// PATRÓN DE DISEÑO APLICADO: Policy Pattern (Patrón de Política).
-// Agrupa reglas de negocio complejas en una clase separada en lugar de tener "if/else" regados por todos los servicios.
-// Ejemplo: Si mañana el gobierno exige un nuevo seguro, solo modificamos esta clase y todo el sistema se actualiza.
 
-    public boolean isAvailable(Vehiculo vehiculo) {
-    // Método que verifica de forma rápida si un vehículo está teóricamente libre.
-    // REGLA DE NEGOCIO: Un vehículo solo está libre si existe físicamente, no ha sido dado de baja y su estado es "DISPONIBLE".
-    
-        // Retorna verdadero SOLO SI se cumplen estas tres condiciones al mismo tiempo:
+    private static final List<EstadoReserva> ESTADOS_BLOQUEANTES = List.of(EstadoReserva.CONFIRMADA);
+
+    private final ReservaRepository reservaRepository;
+
+    /** Vehículo operativo: activo y no en mantenimiento ni fuera de servicio. */
+    public boolean isOperational(Vehiculo vehiculo) {
         return vehiculo != null
-                // Condición 1: Que el objeto vehículo exista (no sea nulo).
                 && Boolean.TRUE.equals(vehiculo.getActivo())
-                // Condición 2: Que el vehículo esté marcado como Activo en el sistema (no esté en la papelera).
                 && vehiculo.getEstadoVehiculo() == EstadoVehiculo.DISPONIBLE;
-                // Condición 3: Que su etiqueta de estado diga exactamente "DISPONIBLE".
-                // Ejemplo: Si el camión está "EN_MANTENIMIENTO", esta prueba falla y devuelve falso.
     }
 
-    public boolean isAvailableForReservation(Vehiculo vehiculo) {
-    // Método más riguroso que evalúa si un vehículo es legalmente apto para salir a un viaje.
-    
-        // Reutiliza el método de arriba. Si el vehículo no está teóricamente libre, aborta enseguida.
-        if (!isAvailable(vehiculo)) {
-            // Retorna falso porque no está libre.
-            return false;
-        }
-        
-        // Extrae la fecha exacta del día de hoy.
-        // Ejemplo: Si hoy es 20 de Junio de 2026, guarda ese dato para comparar papeles.
+    /** Alias de isOperational para compatibilidad con consultas REST existentes. */
+    public boolean isAvailable(Vehiculo vehiculo) {
+        return isOperational(vehiculo);
+    }
+
+    public boolean hasValidDocuments(Vehiculo vehiculo) {
         LocalDate hoy = LocalDate.now();
-        
-        // REGLA DE NEGOCIO: Legalidad Documental.
-        // Verifica si la fecha de vencimiento del SOAT es ANTES (isBefore) del día de hoy (es decir, ya se venció).
-        if (vehiculo.getFechaSoat() != null && vehiculo.getFechaSoat().isBefore(hoy)) {
-            
-            // Deja un registro en la consola advirtiendo el motivo del rechazo.
-            log.warn("Vehículo {} rechazado: SOAT vencido", vehiculo.getNumeroPlaca());
-            
-            // Retorna falso porque es ilegal despachar el camión.
-            // Ejemplo: El SOAT venció ayer, por lo que el sistema congela la asignación.
+
+        if (vehiculo.getFechaSoat() == null || vehiculo.getFechaSoat().isBefore(hoy)) {
+            log.warn("Vehículo {} rechazado: SOAT vencido o ausente", vehiculo.getNumeroPlaca());
             return false;
         }
-        
-        // Verifica de la misma manera si la Revisión Técnico Mecánica (RTM) ya está vencida.
-        if (vehiculo.getFechaRtm() != null && vehiculo.getFechaRtm().isBefore(hoy)) {
-            
-            // Registra en la bitácora que la RTM está vencida.
-            log.warn("Vehículo {} rechazado: RTM vencida", vehiculo.getNumeroPlaca());
-            
-            // Retorna falso para impedir el viaje.
+        if (ChronoUnit.DAYS.between(hoy, vehiculo.getFechaSoat()) <= 7) {
+            log.warn("Vehículo {} rechazado: SOAT vence en 7 días o menos", vehiculo.getNumeroPlaca());
             return false;
         }
-        
-        // Si pasó todas las pruebas operativas y legales, retorna verdadero (Aprobado).
+        if (vehiculo.getFechaRtm() == null || vehiculo.getFechaRtm().isBefore(hoy)) {
+            log.warn("Vehículo {} rechazado: RTM vencida o ausente", vehiculo.getNumeroPlaca());
+            return false;
+        }
+        if (ChronoUnit.DAYS.between(hoy, vehiculo.getFechaRtm()) <= 7) {
+            log.warn("Vehículo {} rechazado: RTM vence en 7 días o menos", vehiculo.getNumeroPlaca());
+            return false;
+        }
         return true;
+    }
+
+    /** Documentos vigentes sin la regla estricta de 7 días (consultas rápidas). */
+    public boolean isAvailableForReservation(Vehiculo vehiculo) {
+        if (!isOperational(vehiculo)) {
+            return false;
+        }
+        LocalDate hoy = LocalDate.now();
+        if (vehiculo.getFechaSoat() != null && vehiculo.getFechaSoat().isBefore(hoy)) {
+            log.warn("Vehículo {} rechazado: SOAT vencido", vehiculo.getNumeroPlaca());
+            return false;
+        }
+        if (vehiculo.getFechaRtm() != null && vehiculo.getFechaRtm().isBefore(hoy)) {
+            log.warn("Vehículo {} rechazado: RTM vencida", vehiculo.getNumeroPlaca());
+            return false;
+        }
+        return true;
+    }
+
+    public boolean hasReservationConflict(UUID idVehiculo, LocalDateTime fechaInicio, LocalDateTime fechaFin) {
+        return !reservaRepository.obtenerReservasConflictivas(
+                idVehiculo, ESTADOS_BLOQUEANTES, fechaFin, fechaInicio).isEmpty();
+    }
+
+    /** Asignable si está operativo, con documentos válidos y sin solapamiento de reservas CONFIRMADAS. */
+    public boolean isAssignable(Vehiculo vehiculo, LocalDateTime fechaInicio, LocalDateTime fechaFin) {
+        return isOperational(vehiculo)
+                && hasValidDocuments(vehiculo)
+                && !hasReservationConflict(vehiculo.getIdVehiculo(), fechaInicio, fechaFin);
     }
 }

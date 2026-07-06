@@ -16,4 +16,4 @@ scrape_configs:
   - job_name: api-metrics
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ['54.226.57.71:18001']
+      - targets: ['54.226.57.71:18000']
