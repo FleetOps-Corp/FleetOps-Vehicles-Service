@@ -600,6 +600,25 @@ public class VehicleServiceImpl implements VehicleService {
     @Override
     @Transactional
     public VehicleResponse changeState(UUID id, String nuevoEstado, String motivoCambio, String servicioOrigen) {
+        return changeState(id, nuevoEstado, motivoCambio, servicioOrigen, null);
+    }
+
+    @Override
+    @Transactional
+    public VehicleResponse changeState(UUID id, String nuevoEstado, String motivoCambio, String servicioOrigen,
+            String idCorrelacion) {
+        return applyStateChange(id, nuevoEstado, motivoCambio, servicioOrigen, idCorrelacion, true);
+    }
+
+    @Override
+    @Transactional
+    public VehicleResponse changeOperationalStateOnly(UUID id, String nuevoEstado, String motivoCambio,
+            String servicioOrigen, String idCorrelacion) {
+        return applyStateChange(id, nuevoEstado, motivoCambio, servicioOrigen, idCorrelacion, false);
+    }
+
+    private VehicleResponse applyStateChange(UUID id, String nuevoEstado, String motivoCambio, String servicioOrigen,
+            String idCorrelacion, boolean cascadeReservas) {
         // Método central para transicionar un vehículo de un estado operativo a otro de
         // manera controlada.
 
@@ -636,14 +655,17 @@ public class VehicleServiceImpl implements VehicleService {
 
         String motivoAuditoria = motivoCambio;
 
-        if (estadoDestino == EstadoVehiculo.FUERA_DE_SERVICIO || estadoDestino == EstadoVehiculo.EN_MANTENIMIENTO) {
+        if (cascadeReservas
+                && (estadoDestino == EstadoVehiculo.FUERA_DE_SERVICIO
+                        || estadoDestino == EstadoVehiculo.EN_MANTENIMIENTO)) {
             motivoAuditoria = procesarCascadaEmergencia(vehiculo, estadoActual, estadoDestino, motivoCambio);
             // Reafirmamos el estado por si la compensación de saga intentó liberar el vehículo.
             vehiculo.setEstadoVehiculo(estadoDestino);
         }
 
         Vehiculo vehiculoActualizado = vehicleRepository.save(vehiculo);
-        registrarHistorial(vehiculoActualizado, estadoActual, estadoDestino, motivoAuditoria, servicioOrigen, null);
+        registrarHistorial(vehiculoActualizado, estadoActual, estadoDestino, motivoAuditoria, servicioOrigen,
+                idCorrelacion);
 
         log.info("Cambio de estado exitoso: {} -> {} | Vehículo ID: {}", estadoActual, estadoDestino, id);
 

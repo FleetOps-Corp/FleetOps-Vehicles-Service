@@ -58,6 +58,16 @@ public interface VehicleService {
     // REGLA: Máquina de estados (no permite saltos ilógicos, como de 'Destruido' a 'Reservado').
     VehicleResponse changeState(UUID id, String nuevoEstado, String motivoCambio, String servicioOrigen);
 
+    VehicleResponse changeState(UUID id, String nuevoEstado, String motivoCambio, String servicioOrigen,
+            String idCorrelacion);
+
+    /**
+     * Cambia solo el estado operativo del vehículo (historial incluido).
+     * No cancela ni compensa reservas; la liberación del calendario es vía Kafka {@code liberar}.
+     */
+    VehicleResponse changeOperationalStateOnly(UUID id, String nuevoEstado, String motivoCambio,
+            String servicioOrigen, String idCorrelacion);
+
     // Idem al anterior, pero usando placa para identificar al activo.
     VehicleResponse updateEstadoByPlaca(String placa, EstadoCambioRequest request);
 

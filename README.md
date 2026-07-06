@@ -370,6 +370,18 @@ public ResponseEntity<?> createVehiculo(@Valid @RequestBody CreateVehiculoReques
 
 ---
 
+## Integración SQS (Incidentes)
+
+Contrato completo: [docs/contrato-sqs-incidentes.md](docs/contrato-sqs-incidentes.md)
+
+| Cola | Rol de Vehículos |
+|------|------------------|
+| `queue_vehicles` | **Consume** — incidentes mecánicos vía SNS fan-out |
+
+Activar en AWS con `SQS_ENABLED=true` y IAM Role con permisos sobre `arn:aws:sqs:us-east-1:255615880629:queue_vehicles`. En local queda deshabilitado por defecto.
+
+---
+
 ## Integración Kafka (Contrato A+)
 
 Contrato completo: [docs/contrato-kafka.md](docs/contrato-kafka.md)
