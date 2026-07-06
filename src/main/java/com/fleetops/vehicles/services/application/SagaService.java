@@ -16,6 +16,8 @@ import java.util.UUID;
 
 public interface SagaService {
 
+    void confirmarReservaPorAsignacion(UUID idAsignacion);
+    
     ReservaResponse compensarPorReservaId(UUID reservaId, String motivo);
 
     List<ReservaResponse> cancelarReservasPorPlaca(String placa, String motivo);
