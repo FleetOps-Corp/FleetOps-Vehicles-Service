@@ -183,4 +183,54 @@ public interface ReservaRepository extends JpaRepository<ReservaVehiculo, UUID> 
     // =====================================================================================
     boolean existsByIdAsignacionExt(UUID idAsignacionExt);
 
+    @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo", "sagaVehiculo"})
+    Optional<ReservaVehiculo> findByClaveIdempotencia(String claveIdempotencia);
+
+    @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo", "sagaVehiculo"})
+    Optional<ReservaVehiculo> findByIdAsignacionExt(UUID idAsignacionExt);
+
+    @Query("""
+            SELECT COUNT(r) FROM ReservaVehiculo r
+            WHERE r.estadoReserva = com.fleetops.vehicles.models.entities.EstadoReserva.CONFIRMADA
+              AND :now >= r.fechaInicio AND :now <= r.fechaFin
+            """)
+    long countCurrentlyActiveReservations(@Param("now") LocalDateTime now);
+
+    @Query("""
+            SELECT COUNT(r) FROM ReservaVehiculo r
+            JOIN r.sagaVehiculo s
+            WHERE r.estadoReserva = com.fleetops.vehicles.models.entities.EstadoReserva.CONFIRMADA
+              AND s.estadoSaga = com.fleetops.vehicles.models.entities.EstadoSaga.COMPLETADA
+              AND s.asignacionesAck = false
+            """)
+    long countConfirmadasSinAck();
+
+    @Query("""
+            SELECT r FROM ReservaVehiculo r
+            JOIN FETCH r.sagaVehiculo s
+            JOIN FETCH r.vehiculo v
+            WHERE r.estadoReserva = com.fleetops.vehicles.models.entities.EstadoReserva.CONFIRMADA
+              AND s.estadoSaga = com.fleetops.vehicles.models.entities.EstadoSaga.COMPLETADA
+              AND s.asignacionesAck = false
+              AND r.creadoEn < :limite
+              AND s.reconfirmaciones < :maxReconfirmaciones
+            """)
+    List<ReservaVehiculo> findConfirmadasSinAckAntesDe(
+            @Param("limite") LocalDateTime limite,
+            @Param("maxReconfirmaciones") int maxReconfirmaciones);
+
+    @Query("""
+            SELECT r FROM ReservaVehiculo r
+            JOIN FETCH r.sagaVehiculo s
+            JOIN FETCH r.vehiculo v
+            WHERE r.estadoReserva = com.fleetops.vehicles.models.entities.EstadoReserva.CONFIRMADA
+              AND s.estadoSaga = com.fleetops.vehicles.models.entities.EstadoSaga.COMPLETADA
+              AND s.asignacionesAck = false
+              AND r.creadoEn < :limite
+              AND s.reconfirmaciones >= :maxReconfirmaciones
+            """)
+    List<ReservaVehiculo> findConfirmadasSinAckParaCompensar(
+            @Param("limite") LocalDateTime limite,
+            @Param("maxReconfirmaciones") int maxReconfirmaciones);
+
 }

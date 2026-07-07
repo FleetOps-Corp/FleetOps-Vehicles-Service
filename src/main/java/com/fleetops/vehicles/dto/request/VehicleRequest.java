@@ -2,7 +2,12 @@
 package com.fleetops.vehicles.dto.request;
 
 // Importa todas las herramientas de validación estándar de Java (como @NotNull, @Min, @Pattern, etc.).
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.PositiveOrZero;
 // Importa la herramienta de Java para manejar fechas exactas (sin tener en cuenta la hora).
 import java.time.LocalDate;
 
@@ -133,4 +138,4 @@ public record VehicleRequest(
     // =========================================================================================
     LocalDate fechaUltimoMant
 
-) {}
+) { }

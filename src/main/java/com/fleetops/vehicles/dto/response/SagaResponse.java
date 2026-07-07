@@ -62,4 +62,4 @@ public record SagaResponse(
         // sin tener que hacer consultas adicionales a la tabla de vehículos.
         // =========================================================================================
         String numeroPlaca
-) {}
+) { }

@@ -64,14 +64,14 @@ class DtoMappersTest {
                 .idHistorial(UUID.randomUUID())
                 .vehiculo(v)
                 .estadoAnterior(EstadoVehiculo.DISPONIBLE.name())
-                .estadoNuevo(EstadoVehiculo.RESERVADO.name())
+                .estadoNuevo(EstadoVehiculo.EN_MANTENIMIENTO.name())
                 .motivoCambio("test")
                 .servicioOrigen("test-svc")
                 .registradoEn(LocalDateTime.now())
                 .build();
 
         var dto = historialMapper.toDto(h);
-        assertEquals(EstadoVehiculo.RESERVADO.name(), dto.estadoNuevo());
+        assertEquals(EstadoVehiculo.EN_MANTENIMIENTO.name(), dto.estadoNuevo());
         assertEquals(v.getNumeroPlaca(), dto.numeroPlaca());
         assertEquals("Furgon", dto.nombreTipo());
     }

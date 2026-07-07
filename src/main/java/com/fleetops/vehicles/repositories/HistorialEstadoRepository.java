@@ -21,4 +21,6 @@ public interface HistorialEstadoRepository extends JpaRepository<HistorialEstado
     @EntityGraph(attributePaths = {"vehiculo", "vehiculo.tipoVehiculo"})
     Page<HistorialEstadoVehiculo> findByVehiculo_NumeroPlacaIgnoreCaseOrderByRegistradoEnDesc(
             String numeroPlaca, Pageable pageable);
+
+    boolean existsByIdCorrelacion(String idCorrelacion);
 }

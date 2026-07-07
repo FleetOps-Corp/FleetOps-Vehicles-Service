@@ -1,6 +1,7 @@
 package com.fleetops.vehicles.metrics;
 
 import com.fleetops.vehicles.models.entities.EstadoVehiculo;
+import com.fleetops.vehicles.repositories.ReservaRepository;
 import com.fleetops.vehicles.repositories.VehicleRepository;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -21,13 +22,16 @@ class VehicleMetricsTest {
     @Test
     void registraGaugesYUsaCache() {
         VehicleRepository repository = mock(VehicleRepository.class);
+        ReservaRepository reservaRepository = mock(ReservaRepository.class);
         List<Object[]> initial = List.<Object[]>of(
                 new Object[]{EstadoVehiculo.DISPONIBLE, 5L},
-                new Object[]{EstadoVehiculo.RESERVADO, 2L});
+                new Object[]{EstadoVehiculo.EN_MANTENIMIENTO, 2L});
         when(repository.countActiveGroupByEstado()).thenReturn(initial);
+        when(reservaRepository.countCurrentlyActiveReservations(any())).thenReturn(3L);
+        when(reservaRepository.countConfirmadasSinAck()).thenReturn(1L);
 
         MeterRegistry registry = new SimpleMeterRegistry();
-        VehicleMetrics metrics = new VehicleMetrics(repository, registry);
+        VehicleMetrics metrics = new VehicleMetrics(repository, reservaRepository, registry);
 
         Double disponible = registry.get("fleetops_vehiculos_por_estado")
                 .tag("estado", "disponible")
@@ -35,37 +39,46 @@ class VehicleMetricsTest {
                 .value();
         assertEquals(5.0, disponible);
 
-        Double reservado = registry.get("fleetops_vehiculos_por_estado")
-                .tag("estado", "reservado")
+        Double mantenimiento = registry.get("fleetops_vehiculos_por_estado")
+                .tag("estado", "en_mantenimiento")
                 .gauge()
                 .value();
-        assertEquals(2.0, reservado);
+        assertEquals(2.0, mantenimiento);
+
+        assertEquals(3.0, registry.get("fleetops_reservas_activas").gauge().value());
 
         // Segunda lectura dentro del TTL no debe volver a consultar la BD.
         registry.get("fleetops_vehiculos_por_estado").tag("estado", "disponible").gauge().value();
         verify(repository, times(1)).countActiveGroupByEstado();
+        verify(reservaRepository, times(1)).countCurrentlyActiveReservations(any());
 
         // Estado sin filas en el GROUP BY usa default 0.
         assertEquals(0.0, registry.get("fleetops_vehiculos_por_estado")
-                .tag("estado", "en_mantenimiento").gauge().value());
+                .tag("estado", "fuera_de_servicio").gauge().value());
 
         // Expirar caché fuerza un nuevo refresh.
         ReflectionTestUtils.setField(metrics, "lastRefreshMs", 0L);
         List<Object[]> refreshed = List.<Object[]>of(new Object[]{EstadoVehiculo.DISPONIBLE, 9L});
         when(repository.countActiveGroupByEstado()).thenReturn(refreshed);
+        when(reservaRepository.countCurrentlyActiveReservations(any())).thenReturn(5L);
+        when(reservaRepository.countConfirmadasSinAck()).thenReturn(2L);
         assertEquals(9.0, registry.get("fleetops_vehiculos_por_estado")
                 .tag("estado", "disponible").gauge().value());
+        assertEquals(5.0, registry.get("fleetops_reservas_activas").gauge().value());
         verify(repository, times(2)).countActiveGroupByEstado();
     }
 
     @Test
     void ensureFreshEsThreadSafeAlExpirarCache() throws Exception {
         VehicleRepository repository = mock(VehicleRepository.class);
+        ReservaRepository reservaRepository = mock(ReservaRepository.class);
         List<Object[]> rows = List.<Object[]>of(new Object[]{EstadoVehiculo.DISPONIBLE, 1L});
         when(repository.countActiveGroupByEstado()).thenReturn(rows);
+        when(reservaRepository.countCurrentlyActiveReservations(any())).thenReturn(0L);
+        when(reservaRepository.countConfirmadasSinAck()).thenReturn(0L);
 
         MeterRegistry registry = new SimpleMeterRegistry();
-        VehicleMetrics metrics = new VehicleMetrics(repository, registry);
+        VehicleMetrics metrics = new VehicleMetrics(repository, reservaRepository, registry);
         ReflectionTestUtils.setField(metrics, "lastRefreshMs", 0L);
 
         int threads = 8;

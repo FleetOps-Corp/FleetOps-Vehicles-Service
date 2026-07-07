@@ -19,15 +19,6 @@ public enum EstadoVehiculo {
     DISPONIBLE,
 
     // =========================================================================================
-    // Estado: RESERVADO
-    // ¿Qué hace? El vehículo ya tiene un compromiso de uso futuro o inmediato.
-    // REGLA DE NEGOCIO: Bloqueo de concurrencia. Impide que otros usuarios reserven el mismo 
-    // activo en la misma ventana de tiempo, evitando el sobrecupo.
-    // Ejemplo: El taxi tiene un letrero de "Ocupado" porque va en camino a recoger a alguien.
-    // =========================================================================================
-    RESERVADO,
-
-    // =========================================================================================
     // Estado: EN_MANTENIMIENTO
     // ¿Qué hace? El vehículo está bajo intervención técnica en el taller.
     // REGLA DE NEGOCIO: Bloqueo de seguridad. Ningún sistema (App, Web, API) puede 
