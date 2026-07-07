@@ -1,0 +1,27 @@
+# Configuración de Dependabot para FleetOps Vehicles
+# Docs: https://docs.github.com/es/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Alcance actual: Maven y GitHub Actions, actualización semanal.
+# Docker NO se incluye todavia (fuera de alcance de esta fase).
+
+version: 2
+updates:
+  # Dependencias Maven (pom.xml)
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "maven"
+
+  # Acciones usadas en los workflows de GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "github-actions"

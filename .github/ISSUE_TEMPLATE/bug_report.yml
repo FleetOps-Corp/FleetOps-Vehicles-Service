@@ -1,0 +1,74 @@
+name: Bug Report
+description: Reportar un error o comportamiento inesperado en FleetOps Vehicles
+title: "[BUG] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por reportar un bug. Completa la mayor cantidad de información posible para agilizar el diagnóstico.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Descripción del bug
+      description: Descripción clara y concisa del problema.
+      placeholder: "Al hacer POST /vehiculos con un numero_placa duplicado, la API responde 500 en vez de 409..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducir
+      description: Pasos detallados para reproducir el comportamiento.
+      placeholder: |
+        1. Levantar el proyecto con `docker compose up -d --build`
+        2. Hacer POST a /vehiculos con ...
+        3. Observar el error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamiento esperado
+      description: ¿Qué esperabas que pasara?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Comportamiento actual
+      description: ¿Qué pasó realmente? Incluye logs, stack traces o capturas si es posible.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Entorno
+      options:
+        - Local (Maven directo)
+        - Local (Docker Compose)
+        - CI (GitHub Actions)
+        - Otro
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Versión / commit / rama
+      placeholder: "develop @ a1b2c3d, o v0.1.0"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Contexto adicional
+      description: Cualquier otra información relevante (SO, versión de Java/Docker, etc.)
+    validations:
+      required: false
