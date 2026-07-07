@@ -29,7 +29,7 @@ El servicio ejecutaba jobs programados muy frecuentes, hacía `findAll()` de tod
 | `cancelarReservasExpiradas` | Cada **30 s** | Cada **2 min** | **Eliminado** — asignaciones vía Kafka crean reserva `CONFIRMADA` directa |
 | `auditarVencimientoDocumentosLegales` | Cada **60 s** + `findAll()` | **1 vez al día** a las 06:00 | Sin cambio |
 
-La regla de negocio del timeout de reservas PENDIENTE ya no aplica: las asignaciones se confirman en un solo evento Kafka.
+La regla de negocio del timeout de reservas PENDIENTE ya no aplica: **Contrato A+** confirma en `solicitar`. La reconciliación de sagas sin ACK de Asignaciones la realiza `SagaReconciliationJob` (republica `confirmado` o auto-compensa).
 
 #### 2. `ReservaRepository.java`
 

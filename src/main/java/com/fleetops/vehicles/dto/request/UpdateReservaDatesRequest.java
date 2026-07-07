@@ -12,4 +12,4 @@ public record UpdateReservaDatesRequest(
     @NotNull(message = "La fecha de fin es obligatoria")
     @FutureOrPresent(message = "La fecha de fin debe ser presente o futura")
     LocalDateTime fechaFin
-) {}
+) { }

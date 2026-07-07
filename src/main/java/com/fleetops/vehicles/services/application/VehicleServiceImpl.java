@@ -5,7 +5,12 @@ import com.fleetops.vehicles.exception.BusinessException;
 import com.fleetops.vehicles.exception.ResourceNotFoundException;
 import com.fleetops.vehicles.mapper.DtoMapperHistorial;
 import com.fleetops.vehicles.mapper.DtoMapperVehicle;
-import com.fleetops.vehicles.models.entities.*;
+import com.fleetops.vehicles.models.entities.EstadoReserva;
+import com.fleetops.vehicles.models.entities.EstadoVehiculo;
+import com.fleetops.vehicles.models.entities.HistorialEstadoVehiculo;
+import com.fleetops.vehicles.models.entities.ReservaVehiculo;
+import com.fleetops.vehicles.models.entities.TipoVehiculo;
+import com.fleetops.vehicles.models.entities.Vehiculo;
 import com.fleetops.vehicles.dto.request.EstadoCambioRequest;
 import com.fleetops.vehicles.dto.request.VehicleRequest;
 import com.fleetops.vehicles.dto.request.VehicleUpdateRequest;
@@ -29,7 +34,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -484,9 +488,9 @@ public class VehicleServiceImpl implements VehicleService {
         vehiculo.setActualizadoEn(LocalDateTime.now());
 
         Vehiculo guardado = vehicleRepository.save(vehiculo);
-        String motivo_completo = "Reactivacion del vehiculo: " + motivo;
+        String motivoCompleto = "Reactivacion del vehiculo: " + motivo;
 
-        registrarHistorial(guardado, estadoAnterior, EstadoVehiculo.FUERA_DE_SERVICIO, motivo_completo,
+        registrarHistorial(guardado, estadoAnterior, EstadoVehiculo.FUERA_DE_SERVICIO, motivoCompleto,
                 "fleetops-vehicles", null);
 
         return dtoMapperVehicle.toDto(guardado);
@@ -516,9 +520,9 @@ public class VehicleServiceImpl implements VehicleService {
         vehiculo.setActualizadoEn(LocalDateTime.now());
 
         Vehiculo guardado = vehicleRepository.save(vehiculo);
-        String motivo_completo = "Reactivacion del vehiculo: " + motivo;
+        String motivoCompleto = "Reactivacion del vehiculo: " + motivo;
 
-        registrarHistorial(guardado, estadoAnterior, EstadoVehiculo.FUERA_DE_SERVICIO, motivo_completo,
+        registrarHistorial(guardado, estadoAnterior, EstadoVehiculo.FUERA_DE_SERVICIO, motivoCompleto,
                 "fleetops-vehicles", null);
 
         log.info("Vehículo con placa {} fue reactivado. Motivo: {}", placa, motivo);
@@ -596,6 +600,25 @@ public class VehicleServiceImpl implements VehicleService {
     @Override
     @Transactional
     public VehicleResponse changeState(UUID id, String nuevoEstado, String motivoCambio, String servicioOrigen) {
+        return changeState(id, nuevoEstado, motivoCambio, servicioOrigen, null);
+    }
+
+    @Override
+    @Transactional
+    public VehicleResponse changeState(UUID id, String nuevoEstado, String motivoCambio, String servicioOrigen,
+            String idCorrelacion) {
+        return applyStateChange(id, nuevoEstado, motivoCambio, servicioOrigen, idCorrelacion, true);
+    }
+
+    @Override
+    @Transactional
+    public VehicleResponse changeOperationalStateOnly(UUID id, String nuevoEstado, String motivoCambio,
+            String servicioOrigen, String idCorrelacion) {
+        return applyStateChange(id, nuevoEstado, motivoCambio, servicioOrigen, idCorrelacion, false);
+    }
+
+    private VehicleResponse applyStateChange(UUID id, String nuevoEstado, String motivoCambio, String servicioOrigen,
+            String idCorrelacion, boolean cascadeReservas) {
         // Método central para transicionar un vehículo de un estado operativo a otro de
         // manera controlada.
 
@@ -632,14 +655,17 @@ public class VehicleServiceImpl implements VehicleService {
 
         String motivoAuditoria = motivoCambio;
 
-        if (estadoDestino == EstadoVehiculo.FUERA_DE_SERVICIO || estadoDestino == EstadoVehiculo.EN_MANTENIMIENTO) {
+        if (cascadeReservas
+                && (estadoDestino == EstadoVehiculo.FUERA_DE_SERVICIO
+                        || estadoDestino == EstadoVehiculo.EN_MANTENIMIENTO)) {
             motivoAuditoria = procesarCascadaEmergencia(vehiculo, estadoActual, estadoDestino, motivoCambio);
             // Reafirmamos el estado por si la compensación de saga intentó liberar el vehículo.
             vehiculo.setEstadoVehiculo(estadoDestino);
         }
 
         Vehiculo vehiculoActualizado = vehicleRepository.save(vehiculo);
-        registrarHistorial(vehiculoActualizado, estadoActual, estadoDestino, motivoAuditoria, servicioOrigen, null);
+        registrarHistorial(vehiculoActualizado, estadoActual, estadoDestino, motivoAuditoria, servicioOrigen,
+                idCorrelacion);
 
         log.info("Cambio de estado exitoso: {} -> {} | Vehículo ID: {}", estadoActual, estadoDestino, id);
 

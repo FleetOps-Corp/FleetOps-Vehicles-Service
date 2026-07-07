@@ -15,4 +15,4 @@ public record DisponibilidadRangoResponse(
         LocalDate fechaFin,
         String motivo,
         LocalDateTime evaluadoEn
-) {}
+) { }

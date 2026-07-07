@@ -2,7 +2,12 @@
 package com.fleetops.vehicles.dto.request;
 
 // Importa las herramientas de validación de Java para blindar la entrada de datos.
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.PositiveOrZero;
 // Importa la herramienta para manejar fechas (sin hora).
 import java.time.LocalDate;
 
@@ -99,4 +104,4 @@ public record VehicleUpdateRequest(
         // Fecha del último mantenimiento (no se exige que sea futura porque es un registro de un evento pasado).
         @NotNull(message = "La fecha del ultimo mantenimiento es obligatoria")
         LocalDate fechaUltimoMant
-) {}
+) { }

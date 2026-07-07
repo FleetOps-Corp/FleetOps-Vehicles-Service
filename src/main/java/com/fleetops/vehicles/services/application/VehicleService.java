@@ -11,7 +11,6 @@ import com.fleetops.vehicles.dto.response.VehicleResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.UUID;
 
 // PATRÓN DE DISEÑO APLICADO: Application Facade (Fachada de Aplicación).
@@ -58,6 +57,16 @@ public interface VehicleService {
     // Transiciona el vehículo entre estados (ej: Disponible -> Mantenimiento).
     // REGLA: Máquina de estados (no permite saltos ilógicos, como de 'Destruido' a 'Reservado').
     VehicleResponse changeState(UUID id, String nuevoEstado, String motivoCambio, String servicioOrigen);
+
+    VehicleResponse changeState(UUID id, String nuevoEstado, String motivoCambio, String servicioOrigen,
+            String idCorrelacion);
+
+    /**
+     * Cambia solo el estado operativo del vehículo (historial incluido).
+     * No cancela ni compensa reservas; la liberación del calendario es vía Kafka {@code liberar}.
+     */
+    VehicleResponse changeOperationalStateOnly(UUID id, String nuevoEstado, String motivoCambio,
+            String servicioOrigen, String idCorrelacion);
 
     // Idem al anterior, pero usando placa para identificar al activo.
     VehicleResponse updateEstadoByPlaca(String placa, EstadoCambioRequest request);

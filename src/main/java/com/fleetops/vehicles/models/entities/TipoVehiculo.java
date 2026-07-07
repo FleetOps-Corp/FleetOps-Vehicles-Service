@@ -1,10 +1,20 @@
 // Define la "carpeta" lógica del proyecto donde residen las entidades del modelo.
 package com.fleetops.vehicles.models.entities;
 
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 // Importa las herramientas de persistencia JPA para mapear Java a tablas.
-import jakarta.persistence.*;
 // Importa Lombok para reducir código repetitivo (boilerplate).
-import lombok.*;
 // Importa herramientas para manejar fechas y tiempos.
 import java.time.LocalDateTime;
 

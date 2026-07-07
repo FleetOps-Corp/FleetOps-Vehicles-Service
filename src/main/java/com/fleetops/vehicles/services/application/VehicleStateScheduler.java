@@ -1,7 +1,10 @@
 package com.fleetops.vehicles.services.application;
 
-import com.fleetops.vehicles.models.entities.*;
-import com.fleetops.vehicles.repositories.*;
+import com.fleetops.vehicles.models.entities.EstadoVehiculo;
+import com.fleetops.vehicles.models.entities.HistorialEstadoVehiculo;
+import com.fleetops.vehicles.models.entities.Vehiculo;
+import com.fleetops.vehicles.repositories.HistorialEstadoRepository;
+import com.fleetops.vehicles.repositories.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;

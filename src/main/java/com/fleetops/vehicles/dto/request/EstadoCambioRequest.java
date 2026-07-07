@@ -54,4 +54,4 @@ public record EstadoCambioRequest(
     // ese código, el dato llegará vacío (null) y nuestra API no lanzará ningún error.
     // =========================================================================================
     String idCorrelacion
-) {}
+) { }

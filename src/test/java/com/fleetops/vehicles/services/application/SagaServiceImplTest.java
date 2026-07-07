@@ -63,7 +63,7 @@ class SagaServiceImplTest {
     }
 
     @Test
-    void procesarSolicitudAsignacionCreaReservaPendiente() {
+    void procesarSolicitudAsignacionCreaReservaConfirmada() {
         sinReservaPrevia();
         when(vehicleRepository.findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase("Camion"))
                 .thenReturn(List.of(vehiculo));
@@ -81,11 +81,12 @@ class SagaServiceImplTest {
         assertTrue(result.isSuccess());
         assertFalse(result.isIdempotentReplay());
         verify(vehicleRepository).findByIdForUpdate(vehiculo.getIdVehiculo());
-        verify(reservaRepository).save(argThat(r -> r.getEstadoReserva() == EstadoReserva.PENDIENTE));
+        verify(reservaRepository).save(argThat(r -> r.getEstadoReserva() == EstadoReserva.CONFIRMADA));
         verify(reservaRepository).save(argThat(r ->
-            r.getEstadoReserva() == EstadoReserva.PENDIENTE &&
+            r.getEstadoReserva() == EstadoReserva.CONFIRMADA &&
             r.getSagaVehiculo() != null &&
-            r.getSagaVehiculo().getEstadoSaga() == EstadoSaga.EN_PROGRESO
+            r.getSagaVehiculo().getEstadoSaga() == EstadoSaga.COMPLETADA &&
+            Boolean.FALSE.equals(r.getSagaVehiculo().getAsignacionesAck())
         ));
     }
 
@@ -289,8 +290,31 @@ class SagaServiceImplTest {
         assertFalse(service.procesarLiberacionAsignacion(null).isProcessed());
         assertFalse(service.procesarLiberacionAsignacion(
                 VehicleReleaseEvent.builder().motivo("x").build()).isProcessed());
-        assertFalse(service.procesarLiberacionAsignacion(
-                VehicleReleaseEvent.builder().idAsignacion(UUID.randomUUID()).build()).isProcessed());
+    }
+
+    @Test
+    void procesarLiberacionConSoloIdSagaUsaMotivoPorDefecto() {
+        UUID idSaga = UUID.randomUUID();
+        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.COMPLETADA);
+        saga.setIdSaga(idSaga);
+        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
+        reserva.setSagaVehiculo(saga);
+
+        when(reservaRepository.findBySagaVehiculo_IdSaga(idSaga)).thenReturn(Optional.of(reserva));
+        when(reservaRepository.findById(reserva.getIdReserva())).thenReturn(Optional.of(reserva));
+        when(sagaRepository.findById(saga.getIdSaga())).thenReturn(Optional.of(saga));
+        when(reservaRepository.findBySagaVehiculo_IdSaga(saga.getIdSaga())).thenReturn(Optional.of(reserva));
+        when(reservaRepository.save(any())).thenReturn(reserva);
+        when(sagaRepository.save(any())).thenReturn(saga);
+
+        var result = service.procesarLiberacionAsignacion(VehicleReleaseEvent.builder()
+                .idSaga(idSaga)
+                .idVehiculo(vehiculo.getIdVehiculo())
+                .build());
+
+        assertTrue(result.isProcessed());
+        verify(sagaRepository, atLeast(2)).save(argThat(s ->
+                Boolean.TRUE.equals(s.getPermiteReasignacion()) || s.getEstadoSaga() == EstadoSaga.COMPENSADA));
     }
 
     @Test
@@ -350,54 +374,62 @@ class SagaServiceImplTest {
     }
 
     @Test
-    void confirmarReservaPorAsignacionConfirmaReservaYSaga() {
+    void procesarSolicitudAsignacionPermiteReasignacionTrasLiberar() {
+        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.COMPENSADA);
+        saga.setPermiteReasignacion(true);
+        saga.setClaveIdempotencia(event.getIdSaga().toString());
 
-        // Arrange
-        ReservaVehiculo reserva = TestDataFactory.reserva(
-                vehiculo,
-                EstadoReserva.PENDIENTE
-        );
+        ReservaVehiculo cancelada = TestDataFactory.reserva(vehiculo, EstadoReserva.CANCELADA);
+        cancelada.setClaveIdempotencia(event.getIdSaga().toString());
+        cancelada.setSagaVehiculo(saga);
 
-        SagaVehiculo saga = new SagaVehiculo();
-        saga.setEstadoSaga(EstadoSaga.EN_PROGRESO);
+        when(reservaRepository.findByClaveIdempotencia(event.getIdSaga().toString()))
+                .thenReturn(Optional.of(cancelada));
+        when(reservaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(sagaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(vehicleRepository.findByActivoTrueAndTipoVehiculo_NombreTipoContainingIgnoreCase("Camion"))
+                .thenReturn(List.of(vehiculo));
+        when(availabilityPolicy.isAssignable(any(), any(), any())).thenReturn(true);
+        when(vehicleRepository.findByIdForUpdate(vehiculo.getIdVehiculo())).thenReturn(Optional.of(vehiculo));
 
+        var result = service.procesarSolicitudAsignacion(event);
+
+        assertTrue(result.isSuccess());
+        verify(reservaRepository, atLeast(2)).save(any());
+    }
+
+    @Test
+    void registrarAckAsignacionMarcaSaga() {
+        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.COMPLETADA);
+        saga.setAsignacionesAck(false);
+        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
         reserva.setSagaVehiculo(saga);
-        reserva.setIdAsignacionExt(UUID.randomUUID());
+        UUID idAsignacion = UUID.randomUUID();
+        reserva.setIdAsignacionExt(idAsignacion);
 
-        when(reservaRepository.findByIdAsignacionExt(reserva.getIdAsignacionExt()))
-                .thenReturn(Optional.of(reserva));
+        when(reservaRepository.findByIdAsignacionExt(idAsignacion)).thenReturn(Optional.of(reserva));
+        when(sagaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        when(reservaRepository.save(any(ReservaVehiculo.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        service.registrarAckAsignacion(idAsignacion);
 
-        when(sagaRepository.save(any(SagaVehiculo.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-
-        // Act
-        service.confirmarReservaPorAsignacion(reserva.getIdAsignacionExt());
-
-        // Assert
-        assertEquals(EstadoReserva.CONFIRMADA, reserva.getEstadoReserva());
-        assertEquals(EstadoSaga.COMPLETADA, saga.getEstadoSaga());
-
-        verify(reservaRepository).save(reserva);
+        assertTrue(saga.getAsignacionesAck());
+        assertEquals(0, saga.getReconfirmaciones());
         verify(sagaRepository).save(saga);
     }
 
     @Test
-    void confirmarReservaPorAsignacionLanzaExcepcionSiNoExiste() {
-
+    void registrarAckAsignacionIdempotente() {
+        SagaVehiculo saga = TestDataFactory.saga(vehiculo, EstadoSaga.COMPLETADA);
+        saga.setAsignacionesAck(true);
+        ReservaVehiculo reserva = TestDataFactory.reserva(vehiculo, EstadoReserva.CONFIRMADA);
+        reserva.setSagaVehiculo(saga);
         UUID idAsignacion = UUID.randomUUID();
+        reserva.setIdAsignacionExt(idAsignacion);
 
-        when(reservaRepository.findByIdAsignacionExt(idAsignacion))
-                .thenReturn(Optional.empty());
+        when(reservaRepository.findByIdAsignacionExt(idAsignacion)).thenReturn(Optional.of(reserva));
 
-        assertThrows(
-                ResourceNotFoundException.class,
-                () -> service.confirmarReservaPorAsignacion(idAsignacion)
-        );
+        service.registrarAckAsignacion(idAsignacion);
 
-        verify(reservaRepository).findByIdAsignacionExt(idAsignacion);
-        verifyNoMoreInteractions(sagaRepository);
+        verify(sagaRepository, never()).save(any());
     }
 }

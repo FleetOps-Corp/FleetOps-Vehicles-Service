@@ -3,8 +3,17 @@ package com.fleetops.vehicles.controllers;
 
 // Su función es recibir peticiones HTTP, traducirlas y enviarlas al "Cerebro" (Capa de Servicios).
 
-import com.fleetops.vehicles.dto.request.*;
-import com.fleetops.vehicles.dto.response.*;
+import com.fleetops.vehicles.dto.request.EstadoCambioRequest;
+import com.fleetops.vehicles.dto.request.TipoVehiculoRequest;
+import com.fleetops.vehicles.dto.request.VehicleRequest;
+import com.fleetops.vehicles.dto.request.VehicleUpdateRequest;
+import com.fleetops.vehicles.dto.response.DisponibilidadRangoResponse;
+import com.fleetops.vehicles.dto.response.DisponibilidadResponse;
+import com.fleetops.vehicles.dto.response.HistorialEstadoResponse;
+import com.fleetops.vehicles.dto.response.ReservaResponse;
+import com.fleetops.vehicles.dto.response.SagaResponse;
+import com.fleetops.vehicles.dto.response.TipoVehiculoResponse;
+import com.fleetops.vehicles.dto.response.VehicleResponse;
 import com.fleetops.vehicles.models.entities.EstadoReserva;
 import com.fleetops.vehicles.services.application.SagaService;
 import com.fleetops.vehicles.services.application.TipoVehiculoService;
@@ -19,7 +28,16 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.util.Map;

@@ -6,7 +6,6 @@ import com.fleetops.vehicles.models.entities.TipoVehiculo;
 // Importa JpaRepository, la interfaz maestra que nos da los métodos CRUD.
 import org.springframework.data.jpa.repository.JpaRepository;
 // Importa la anotación para que Spring reconozca este componente.
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Repository;
 
 // Importa Optional, una herramienta de seguridad que evita NullPointerExceptions.
