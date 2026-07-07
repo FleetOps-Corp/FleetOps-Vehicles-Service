@@ -79,7 +79,7 @@ jobs:
       # si en el futuro se decide construir la imagen en este mismo workflow
       # en vez de reutilizar un artifact/registry).
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # 2. Imagen Docker disponible ---------------------------------------------
       # Hoy el CI (ci.yml) solo empaqueta el jar y lo sube como Artifact; NO
