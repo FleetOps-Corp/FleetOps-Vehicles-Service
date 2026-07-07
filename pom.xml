@@ -39,7 +39,7 @@
              workflow de CI (Fase 3), para evitar duplicar la fuente de verdad.
              El analisis real solo se activara cuando exista el Secret SONAR_TOKEN.
          -->
-        <sonar-maven-plugin.version>4.0.0.4121</sonar-maven-plugin.version>
+        <sonar-maven-plugin.version>5.7.0.6970</sonar-maven-plugin.version>
     </properties>
 
     <dependencies>
