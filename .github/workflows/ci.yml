@@ -104,7 +104,7 @@ jobs:
       # Complementa el cache nativo de setup-java cacheando tambien el
       # directorio de plugins/wrapper para acelerar runs sucesivos.
       - name: Cache de dependencias Maven
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.m2/repository
