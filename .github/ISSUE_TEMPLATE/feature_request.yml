@@ -1,0 +1,64 @@
+name: Feature Request
+description: Proponer una nueva funcionalidad o mejora para FleetOps Vehicles
+title: "[FEATURE] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por proponer una mejora. Describe el problema que resuelve y la solución propuesta.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: ¿Qué problema resuelve esta funcionalidad?
+      description: Describe el contexto o la limitación actual.
+      placeholder: "Actualmente no es posible filtrar vehículos por ciudad_operacion desde el endpoint de listado..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solución propuesta
+      description: Describe cómo te gustaría que funcionara.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+      description: ¿Consideraste otras soluciones? ¿Por qué esta es la preferida?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Alcance del cambio
+      options:
+        - API REST (controllers/DTOs)
+        - Lógica de negocio (services)
+        - Base de datos (entidades/migraciones Flyway)
+        - Infraestructura (Docker/CI/CD)
+        - Documentación
+        - Otro
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: breaking
+    attributes:
+      label: Impacto
+      options:
+        - label: Esta funcionalidad podría introducir Breaking Changes en la API
+          required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Contexto adicional
+      description: Capturas, referencias, o cualquier otra información relevante.
+    validations:
+      required: false
