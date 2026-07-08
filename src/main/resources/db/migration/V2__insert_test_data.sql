@@ -9,7 +9,7 @@
 INSERT INTO tipos_vehiculo (id_tipo_vehiculo, nombre_tipo, descripcion, capacidad_carga) VALUES
 (1, 'Automovil', 'Transporte de ciudad', 2000.50),
 (2, 'Camioneta', 'Transporte de ciudad premium', 4500.00),
-(3, 'Vehiculo Especializado', 'mercancia', 10000.75),
+(3, 'Vehiculo_especializado', 'mercancia', 10000.75),
 
 -- =============================================================================
 -- CORRECCIÓN DE LA SECUENCIA DE LA TABLA (EVITA ERROR DE DUPLICATE KEY)
