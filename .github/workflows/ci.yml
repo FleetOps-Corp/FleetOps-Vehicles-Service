@@ -79,7 +79,7 @@ jobs:
       # para calcular el "new code period" (blame) con precision. Sin esto
       # el analisis funcionaria igual, pero con menos exactitud.
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
