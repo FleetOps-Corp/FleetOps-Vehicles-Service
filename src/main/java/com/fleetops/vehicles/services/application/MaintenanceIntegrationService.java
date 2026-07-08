@@ -41,24 +41,21 @@ public class MaintenanceIntegrationService {
                 event.vehicleId());
     }
 
-    public void processMaintenanceCompleted(JsonNode payload) {
+public void processMaintenanceCompleted(MaintenanceEvent event) {
 
-        MaintenanceEvent event =
-                objectMapper.convertValue(payload, MaintenanceEvent.class);
+    Vehiculo vehiculo = vehicleRepository
+            .findByIdVehiculoAndActivoTrue(event.vehicleId())
+            .orElseThrow(() ->
+                    new EntityNotFoundException(
+                            "Vehículo no encontrado: " + event.vehicleId()));
 
-        Vehiculo vehiculo = vehicleRepository
-                .findByIdVehiculoAndActivoTrue(event.vehicleId())
-                .orElseThrow(() ->
-                        new EntityNotFoundException(
-                                "Vehículo no encontrado: " + event.vehicleId()));
+    vehiculo.setEstadoVehiculo(EstadoVehiculo.DISPONIBLE);
 
-        vehiculo.setEstadoVehiculo(EstadoVehiculo.DISPONIBLE);
+    vehicleRepository.save(vehiculo);
 
-        vehicleRepository.save(vehiculo);
-
-        log.info(
-                "Vehículo {} cambiado a DISPONIBLE",
-                event.vehicleId());
-    }
+    log.info(
+            "Vehículo {} cambiado a DISPONIBLE",
+            event.vehicleId());
+}
 
 }

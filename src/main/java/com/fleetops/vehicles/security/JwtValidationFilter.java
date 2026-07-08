@@ -9,12 +9,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.security.PublicKey;
 import java.util.List;
 
 @Component
@@ -22,10 +24,12 @@ public class JwtValidationFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtValidationFilter.class);
 
-    private final TokenJwtConfig tokenJwtConfig;
+    private final PublicKey publicKey;
+    private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
-    public JwtValidationFilter(TokenJwtConfig tokenJwtConfig) {
-        this.tokenJwtConfig = tokenJwtConfig;
+    public JwtValidationFilter(PublicKey publicKey, JwtAuthenticationEntryPoint authenticationEntryPoint) {
+        this.publicKey = publicKey;
+        this.authenticationEntryPoint = authenticationEntryPoint;
     }
 
     @Override
@@ -45,24 +49,34 @@ public class JwtValidationFilter extends OncePerRequestFilter {
 
         try {
             Claims claims = Jwts.parser()
-                    .verifyWith(tokenJwtConfig.getSecretKey())
+                    .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
 
             String username = claims.getSubject();
+
             if (username != null) {
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(username, null, List.of());
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-                log.debug("Identidad opcional registrada para: {}", username);
+                log.debug("Usuario autenticado: {}", username);
             }
 
             filterChain.doFilter(request, response);
 
         } catch (JwtException e) {
-            log.warn("Token JWT inválido o expirado, la petición continúa sin identidad: {}", e.getMessage());
-            filterChain.doFilter(request, response);
+
+            log.warn("JWT inválido o expirado: {}", e.getMessage());
+
+            SecurityContextHolder.clearContext();
+
+            authenticationEntryPoint.commence(
+                    request,
+                    response,
+                    new BadCredentialsException(
+                            "Token JWT inválido o expirado.", e)
+            );
         }
     }
 }
