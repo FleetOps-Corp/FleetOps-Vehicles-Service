@@ -107,7 +107,7 @@ jobs:
       #   EC2_SSH_KEY  -> clave privada SSH (formato PEM) con acceso a la instancia
       #   DEPLOY_PATH  -> (opcional) ruta remota donde vive docker-compose.yml
       - name: Desplegar en EC2 via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -122,7 +122,7 @@ jobs:
       # despliegue, reutilizando el mismo endpoint de Actuator ya validado
       # en el Dockerfile (/actuator/health).
       - name: Verificar estado del servicio desplegado
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
