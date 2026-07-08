@@ -57,7 +57,6 @@ ENV SERVER_PORT=8081 \
     DB_NAME=fleetops_vehicles \
     DB_USERNAME=fleetops \
     DB_PASSWORD="" \
-    JWT_SECRET_KEY="" \
     MAINTENANCE_SERVICE_URL=http://localhost:8083 \
     CORS_ALLOWED_ORIGINS="" \
     SHOW_SQL=false \
