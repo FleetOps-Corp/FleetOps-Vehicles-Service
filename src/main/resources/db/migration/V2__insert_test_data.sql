@@ -9,7 +9,7 @@
 INSERT INTO tipos_vehiculo (id_tipo_vehiculo, nombre_tipo, descripcion, capacidad_carga) VALUES
 (1, 'Automovil', 'Transporte de ciudad', 2000.50),
 (2, 'Camioneta', 'Transporte de ciudad premium', 4500.00),
-(3, 'Vehiculo_especializado', 'mercancia', 10000.75),
+(3, 'Vehiculo_especializado', 'mercancia', 10000.75);
 
 -- =============================================================================
 -- CORRECCIÓN DE LA SECUENCIA DE LA TABLA (EVITA ERROR DE DUPLICATE KEY)
@@ -22,7 +22,7 @@ SELECT setval(
 );
 
 
--- SECCIÓN 2: VEHÍCULOS (100 Vehículos - 10 por cada tipo)
+-- SECCIÓN 2: VEHÍCULOS (100 Vehículos)
 INSERT INTO vehiculos (numero_placa, marca, modelo, anio_fabricacion, color, numero_chasis, numero_motor, kilometraje, ciudad_operacion, sede_operacion, estado_vehiculo, id_tipo_vehiculo, fecha_soat, fecha_rtm, fecha_ultimo_mant) VALUES
 
 ('AUT001','Mazda','3',2021,'Negro','CH001','MOT001',1000,'Bogotá','Centro','DISPONIBLE',1,'2026-12-31','2026-12-31','2026-05-15'),
