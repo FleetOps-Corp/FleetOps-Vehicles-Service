@@ -11,24 +11,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.security.PublicKey;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Component
 public class JwtValidationFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtValidationFilter.class);
 
-    private final PublicKey publicKey;
+    private final TokenJwtConfig tokenJwtConfig;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
-    public JwtValidationFilter(PublicKey publicKey, JwtAuthenticationEntryPoint authenticationEntryPoint) {
-        this.publicKey = publicKey;
+    public JwtValidationFilter(TokenJwtConfig tokenJwtConfig, JwtAuthenticationEntryPoint authenticationEntryPoint) {
+        this.tokenJwtConfig = tokenJwtConfig;
         this.authenticationEntryPoint = authenticationEntryPoint;
     }
 
@@ -49,7 +50,7 @@ public class JwtValidationFilter extends OncePerRequestFilter {
 
         try {
             Claims claims = Jwts.parser()
-                    .verifyWith(publicKey)
+                    .verifyWith(tokenJwtConfig.getSecretKey())
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
@@ -57,8 +58,10 @@ public class JwtValidationFilter extends OncePerRequestFilter {
             String username = claims.getSubject();
 
             if (username != null) {
+                List<SimpleGrantedAuthority> grantedAuthorities = resolveAuthorities(claims);
+
                 UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(username, null, List.of());
+                        new UsernamePasswordAuthenticationToken(username, null, grantedAuthorities);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 log.debug("Usuario autenticado: {}", username);
             }
@@ -74,9 +77,22 @@ public class JwtValidationFilter extends OncePerRequestFilter {
             authenticationEntryPoint.commence(
                     request,
                     response,
-                    new BadCredentialsException(
-                            "Token JWT inválido o expirado.", e)
+                    new BadCredentialsException("Token JWT inválido o expirado.", e)
             );
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<SimpleGrantedAuthority> resolveAuthorities(Claims claims) {
+        List<String> authorities = claims.get("authorities", List.class);
+
+        if (authorities == null) {
+            String role = claims.get("role", String.class);
+            authorities = role != null ? List.of(role) : List.of();
+        }
+
+        return authorities.stream()
+                .map(SimpleGrantedAuthority::new)
+                .collect(Collectors.toList());
     }
 }

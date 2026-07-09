@@ -10,8 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
-
-import java.security.PublicKey;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -19,11 +18,11 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class SecurityComponentsTest {
 
-    @Mock private PublicKey publicKey;
     @Mock private FilterChain filterChain;
 
     private JwtValidationFilter filter;
     private JwtAuthenticationEntryPoint authenticationEntryPoint;
+    private TokenJwtConfig tokenJwtConfig;
 
     @BeforeEach
     void setUp() {
@@ -31,11 +30,14 @@ class SecurityComponentsTest {
         SecurityContextHolder.clearContext();
 
         authenticationEntryPoint = new JwtAuthenticationEntryPoint();
-
-        filter = new JwtValidationFilter(
-                publicKey,
-                authenticationEntryPoint
+        tokenJwtConfig = new TokenJwtConfig();
+        ReflectionTestUtils.setField(
+                tokenJwtConfig,
+                "secret",
+                "esta_es_una_clave_secreta_muy_larga_para_desarrollo_local_1234567890"
         );
+
+        filter = new JwtValidationFilter(tokenJwtConfig, authenticationEntryPoint);
     }
 
     @Test
@@ -49,19 +51,6 @@ class SecurityComponentsTest {
         verify(filterChain).doFilter(request, response);
         assertNull(SecurityContextHolder.getContext().getAuthentication());
     }
-
-    // @Test
-    // void filtroConTokenValidoRegistraIdentidad() throws Exception {
-    //     String token = generator.generateToken("tester", 1);
-    //     MockHttpServletRequest request = new MockHttpServletRequest();
-    //     request.addHeader("Authorization", "Bearer " + token);
-    //     MockHttpServletResponse response = new MockHttpServletResponse();
-
-    //     filter.doFilterInternal(request, response, filterChain);
-
-    //     verify(filterChain).doFilter(request, response);
-    //     assertEquals("tester", SecurityContextHolder.getContext().getAuthentication().getName());
-    // }
 
     @Test
     void authenticationEntryPointResponde401() throws Exception {

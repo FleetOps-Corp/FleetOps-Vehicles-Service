@@ -114,8 +114,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    volumes:
-      - ./secrets/jwt_public.pem:/run/secrets/jwt_public.pem:ro
     image: fleetops/vehicles-service:local
     container_name: fleetops-vehicles-service
     restart: unless-stopped
@@ -132,8 +130,7 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
-      JWT_ALGORITHM: ${JWT_ALGORITHM}
-      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public.pem
+      JWT_SECRET: ${JWT_SECRET}
       MAINTENANCE_SERVICE_URL: ${MAINTENANCE_SERVICE_URL}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
       SHOW_SQL: ${SHOW_SQL}

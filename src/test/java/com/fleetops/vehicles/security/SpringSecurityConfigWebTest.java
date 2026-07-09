@@ -14,8 +14,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.security.PublicKey;
-
 @WebMvcTest(controllers = VehicleController.class)
 @Import({
         SpringSecurityConfig.class,
@@ -28,8 +26,6 @@ class SpringSecurityConfigWebTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
-    private PublicKey publicKey;
     @MockBean
     private VehicleService vehicleService;
     @MockBean
