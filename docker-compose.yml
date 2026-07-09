@@ -81,10 +81,12 @@ services:
       - fleetops-network
 
   # ---------------------------------------------------------------------------
-  # LocalStack — SNS/SQS local para Incidentes y Mantenimiento
-  # Ver docs/localstack-sqs.md y scripts/localstack/
+  # LocalStack — solo desarrollo local (perfil "local")
+  # En EC2 no usar: docker compose up (sin perfil local)
+  # Local: COMPOSE_PROFILES=local en .env  →  docker compose up
   # ---------------------------------------------------------------------------
   localstack:
+    profiles: ["local"]
     image: localstack/localstack:3
     container_name: fleetops-localstack
     restart: unless-stopped
@@ -122,9 +124,6 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
-      localstack:
-        condition: service_healthy
-        required: false
     environment:
       # Puerto interno del contenedor (siempre 8081). API_HOST_PORT expone otro puerto en el host.
       SERVER_PORT: "8081"
@@ -140,14 +139,14 @@ services:
       SHOW_SQL: ${SHOW_SQL}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
       SQS_ENABLED: ${SQS_ENABLED:-true}
-      # Local: http://localstack:4566 (ver AWS_ENDPOINT_URL_CONTAINER en .env)
-      # EC2/AWS: vacío → SDK usa endpoints reales de AWS (IAM Role en la instancia)
-      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL_CONTAINER-http://localstack:4566}
+      # Local: AWS_ENDPOINT_URL_CONTAINER=http://localstack:4566 + COMPOSE_PROFILES=local
+      # EC2/AWS: dejar vacío o no definir → endpoints reales de AWS
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL_CONTAINER:-}
       AWS_REGION: ${AWS_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY-}
-      SQS_VEHICLES_QUEUE_URL: ${SQS_VEHICLES_QUEUE_URL:-http://localstack:4566/000000000000/queue_vehicles}
-      MAINTENANCE_SQS_QUEUE_URL: ${MAINTENANCE_SQS_QUEUE_URL:-http://localstack:4566/000000000000/queue_vehicles_maintenance}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      SQS_VEHICLES_QUEUE_URL: ${SQS_VEHICLES_QUEUE_URL}
+      MAINTENANCE_SQS_QUEUE_URL: ${MAINTENANCE_SQS_QUEUE_URL}
       JAVA_OPTS: ${JAVA_OPTS:-}
     ports:
       - "${API_HOST_PORT:-8081}:8081"

@@ -26,7 +26,6 @@ cp .env.example .env
 # Edita .env si hace falta (JWT, etc.)
 
 docker compose up -d --build
-docker compose ps
 ```
 
 LocalStack crea automáticamente:
@@ -54,13 +53,14 @@ MAINTENANCE_SQS_QUEUE_URL=http://localstack:4566/000000000000/queue_vehicles_mai
 
 Desde el **host** (scripts), usa `AWS_ENDPOINT_URL=http://localhost:4566`.
 
-En **docker compose**, el contenedor usa `AWS_ENDPOINT_URL_CONTAINER` (por defecto `http://localstack:4566`). En **EC2/AWS** debe estar vacío en `.env`:
+En **docker compose**, el contenedor usa `AWS_ENDPOINT_URL_CONTAINER`. En **EC2/AWS** déjala vacía y **no** definas `COMPOSE_PROFILES=local`:
 
 ```properties
 AWS_ENDPOINT_URL_CONTAINER=
+# NO usar COMPOSE_PROFILES=local en EC2
 ```
 
-Sin esa variable, `docker-compose.yml` seguiría apuntando a LocalStack aunque las URLs SQS sean de AWS real.
+En **laptop** (`.env.example`): `COMPOSE_PROFILES=local` y `AWS_ENDPOINT_URL_CONTAINER=http://localstack:4566`.
 
 ---
 
