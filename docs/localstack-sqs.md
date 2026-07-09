@@ -54,6 +54,14 @@ MAINTENANCE_SQS_QUEUE_URL=http://localstack:4566/000000000000/queue_vehicles_mai
 
 Desde el **host** (scripts), usa `AWS_ENDPOINT_URL=http://localhost:4566`.
 
+En **docker compose**, el contenedor usa `AWS_ENDPOINT_URL_CONTAINER` (por defecto `http://localstack:4566`). En **EC2/AWS** debe estar vacío en `.env`:
+
+```properties
+AWS_ENDPOINT_URL_CONTAINER=
+```
+
+Sin esa variable, `docker-compose.yml` seguiría apuntando a LocalStack aunque las URLs SQS sean de AWS real.
+
 ---
 
 ## Publicar eventos de prueba
