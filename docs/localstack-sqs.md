@@ -53,14 +53,14 @@ MAINTENANCE_SQS_QUEUE_URL=http://localstack:4566/000000000000/queue_vehicles_mai
 
 Desde el **host** (scripts), usa `AWS_ENDPOINT_URL=http://localhost:4566`.
 
-En **docker compose**, el contenedor usa `AWS_ENDPOINT_URL_CONTAINER`. En **EC2/AWS** déjala vacía y **no** definas `COMPOSE_PROFILES=local`:
+En **docker compose local**, activa el perfil `localstack` (credenciales y endpoint en `application-localstack.properties`):
 
 ```properties
-AWS_ENDPOINT_URL_CONTAINER=
-# NO usar COMPOSE_PROFILES=local en EC2
+COMPOSE_PROFILES=local
+SPRING_PROFILES_ACTIVE=localstack
 ```
 
-En **laptop** (`.env.example`): `COMPOSE_PROFILES=local` y `AWS_ENDPOINT_URL_CONTAINER=http://localstack:4566`.
+En **EC2/AWS** no definas `SPRING_PROFILES_ACTIVE`, `COMPOSE_PROFILES`, ni `AWS_ENDPOINT_URL` (ni siquiera vacío).
 
 ---
 
