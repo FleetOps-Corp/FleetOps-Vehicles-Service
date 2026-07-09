@@ -79,7 +79,7 @@ jobs:
       # si en el futuro se decide construir la imagen en este mismo workflow
       # en vez de reutilizar un artifact/registry).
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # 2. Imagen Docker disponible ---------------------------------------------
       # Hoy el CI (ci.yml) solo empaqueta el jar y lo sube como Artifact; NO
@@ -107,7 +107,7 @@ jobs:
       #   EC2_SSH_KEY  -> clave privada SSH (formato PEM) con acceso a la instancia
       #   DEPLOY_PATH  -> (opcional) ruta remota donde vive docker-compose.yml
       - name: Desplegar en EC2 via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -122,7 +122,7 @@ jobs:
       # despliegue, reutilizando el mismo endpoint de Actuator ya validado
       # en el Dockerfile (/actuator/health).
       - name: Verificar estado del servicio desplegado
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}

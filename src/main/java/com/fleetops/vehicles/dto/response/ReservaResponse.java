@@ -60,4 +60,4 @@ public record ReservaResponse(
     Integer kilometraje,     // Kilometraje al momento de la reserva.
     Double capacidadCarga    // Capacidad en toneladas o kilos.
 
-) {}
+) { }

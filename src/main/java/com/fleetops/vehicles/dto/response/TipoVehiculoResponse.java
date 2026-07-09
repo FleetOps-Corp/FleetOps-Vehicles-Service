@@ -39,4 +39,4 @@ public record TipoVehiculoResponse(
 
     // Auditoría: Indica la última vez que alguien modificó los datos de este tipo de vehículo.
     LocalDateTime actualizadoEn 
-) {}
+) { }

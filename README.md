@@ -370,18 +370,37 @@ public ResponseEntity<?> createVehiculo(@Valid @RequestBody CreateVehiculoReques
 
 ---
 
-## Integración Kafka
+## Integración SQS (Incidentes y Mantenimiento)
+
+| Contrato | Documento |
+|----------|-----------|
+| Incidentes | [docs/contrato-sqs-incidentes.md](docs/contrato-sqs-incidentes.md) |
+| Mantenimiento | [docs/contrato-sqs-manteneance.md](docs/contrato-sqs-manteneance.md) |
+| **Pruebas locales (LocalStack)** | [docs/localstack-sqs.md](docs/localstack-sqs.md) |
+
+| Cola | Rol de Vehículos |
+|------|------------------|
+| `queue_vehicles` | **Consume** — incidentes vía SNS fan-out |
+| `queue_vehicles_maintenance` | **Consume** — creación/fin de mantenimiento |
+
+**Local:** `docker compose up` incluye LocalStack (`:4566`) + scripts en `scripts/localstack/`.  
+**AWS:** `SQS_ENABLED=true` + IAM Role sobre las colas reales.
+
+---
+
+## Integración Kafka (Contrato A+)
 
 Contrato completo: [docs/contrato-kafka.md](docs/contrato-kafka.md)
 
 | Topic | Rol de Vehículos |
 |-------|------------------|
-| `fleetops.vehiculos.solicitar` | **Consume** — crea reserva CONFIRMADA |
+| `fleetops.vehiculos.solicitar` | **Consume** — crea reserva `CONFIRMADA` + publica `confirmado` (tx atómica) |
 | `fleetops.asignaciones.vehiculo.confirmado` | **Publica** — asignación exitosa |
 | `fleetops.asignaciones.vehiculo.fallido` | **Publica** — asignación rechazada |
-| `fleetops.vehiculos.liberar` | **Consume** — cancela reserva (payload provisional) |
+| `fleetops.vehiculos.liberar` | **Consume** — compensa reserva (tolerante al payload de Asignaciones) |
+| `fleetops.asignaciones.completada` | **Consume** — ACK (no confirma reserva; ya está CONFIRMADA) |
 
-Las asignaciones **no** se crean por REST; solo vía Kafka. Los endpoints `POST /reservas/{id}/compensar` y `POST /placa/{placa}/reservas/cancelar` siguen disponibles para operaciones manuales o integraciones HTTP.
+Las asignaciones **no** se crean por REST; solo vía Kafka. El job `SagaReconciliationJob` republica `confirmado` o auto-compensa si Asignaciones no envía ACK (`completada`) en el tiempo configurado.
 
 ### Disponibilidad por rango (REST)
 
@@ -422,6 +441,7 @@ Métricas custom (Prometheus):
 |---------|-------------|
 | `fleetops_vehiculos_por_estado{estado="..."}` | Conteo de vehículos activos por estado |
 | `fleetops_reservas_activas` | Reservas CONFIRMADAS en curso (ahora ∈ [inicio, fin]) |
+| `fleetops_reservas_sin_ack_asignaciones` | CONFIRMADAS sin ACK de Asignaciones (`completada`) |
 
 Otras métricas estándar: `jvm_memory_used_bytes`, `http_server_requests_seconds`, etc.
 

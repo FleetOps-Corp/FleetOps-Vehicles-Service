@@ -28,6 +28,7 @@ class VehicleMetricsTest {
                 new Object[]{EstadoVehiculo.EN_MANTENIMIENTO, 2L});
         when(repository.countActiveGroupByEstado()).thenReturn(initial);
         when(reservaRepository.countCurrentlyActiveReservations(any())).thenReturn(3L);
+        when(reservaRepository.countConfirmadasSinAck()).thenReturn(1L);
 
         MeterRegistry registry = new SimpleMeterRegistry();
         VehicleMetrics metrics = new VehicleMetrics(repository, reservaRepository, registry);
@@ -60,6 +61,7 @@ class VehicleMetricsTest {
         List<Object[]> refreshed = List.<Object[]>of(new Object[]{EstadoVehiculo.DISPONIBLE, 9L});
         when(repository.countActiveGroupByEstado()).thenReturn(refreshed);
         when(reservaRepository.countCurrentlyActiveReservations(any())).thenReturn(5L);
+        when(reservaRepository.countConfirmadasSinAck()).thenReturn(2L);
         assertEquals(9.0, registry.get("fleetops_vehiculos_por_estado")
                 .tag("estado", "disponible").gauge().value());
         assertEquals(5.0, registry.get("fleetops_reservas_activas").gauge().value());
@@ -73,6 +75,7 @@ class VehicleMetricsTest {
         List<Object[]> rows = List.<Object[]>of(new Object[]{EstadoVehiculo.DISPONIBLE, 1L});
         when(repository.countActiveGroupByEstado()).thenReturn(rows);
         when(reservaRepository.countCurrentlyActiveReservations(any())).thenReturn(0L);
+        when(reservaRepository.countConfirmadasSinAck()).thenReturn(0L);
 
         MeterRegistry registry = new SimpleMeterRegistry();
         VehicleMetrics metrics = new VehicleMetrics(repository, reservaRepository, registry);

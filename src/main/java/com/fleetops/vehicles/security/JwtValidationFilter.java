@@ -9,13 +9,16 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Component
 public class JwtValidationFilter extends OncePerRequestFilter {
@@ -23,9 +26,11 @@ public class JwtValidationFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(JwtValidationFilter.class);
 
     private final TokenJwtConfig tokenJwtConfig;
+    private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
-    public JwtValidationFilter(TokenJwtConfig tokenJwtConfig) {
+    public JwtValidationFilter(TokenJwtConfig tokenJwtConfig, JwtAuthenticationEntryPoint authenticationEntryPoint) {
         this.tokenJwtConfig = tokenJwtConfig;
+        this.authenticationEntryPoint = authenticationEntryPoint;
     }
 
     @Override
@@ -51,18 +56,43 @@ public class JwtValidationFilter extends OncePerRequestFilter {
                     .getPayload();
 
             String username = claims.getSubject();
+
             if (username != null) {
+                List<SimpleGrantedAuthority> grantedAuthorities = resolveAuthorities(claims);
+
                 UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(username, null, List.of());
+                        new UsernamePasswordAuthenticationToken(username, null, grantedAuthorities);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-                log.debug("Identidad opcional registrada para: {}", username);
+                log.debug("Usuario autenticado: {}", username);
             }
 
             filterChain.doFilter(request, response);
 
         } catch (JwtException e) {
-            log.warn("Token JWT inválido o expirado, la petición continúa sin identidad: {}", e.getMessage());
-            filterChain.doFilter(request, response);
+
+            log.warn("JWT inválido o expirado: {}", e.getMessage());
+
+            SecurityContextHolder.clearContext();
+
+            authenticationEntryPoint.commence(
+                    request,
+                    response,
+                    new BadCredentialsException("Token JWT inválido o expirado.", e)
+            );
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<SimpleGrantedAuthority> resolveAuthorities(Claims claims) {
+        List<String> authorities = claims.get("authorities", List.class);
+
+        if (authorities == null) {
+            String role = claims.get("role", String.class);
+            authorities = role != null ? List.of(role) : List.of();
+        }
+
+        return authorities.stream()
+                .map(SimpleGrantedAuthority::new)
+                .collect(Collectors.toList());
     }
 }

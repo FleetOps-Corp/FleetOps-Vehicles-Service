@@ -1,9 +1,25 @@
 // Define la "carpeta" lógica del proyecto donde residen las entidades del modelo.
 package com.fleetops.vehicles.models.entities;
 
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 // Importaciones de JPA, Lombok y utilidades de tiempo/ID.
-import jakarta.persistence.*;
-import lombok.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -92,6 +108,21 @@ public class SagaVehiculo {
     // =========================================================================================
     @Column(name = "compensado_por", length = 100)
     private String compensadoPor;
+
+    /** true cuando llega fleetops.asignaciones.completada (ACK, no cambia la reserva). */
+    @Builder.Default
+    @Column(name = "asignaciones_ack", nullable = false)
+    private Boolean asignacionesAck = false;
+
+    /** true tras liberar por Kafka: permite un nuevo solicitar con la misma idSaga. */
+    @Builder.Default
+    @Column(name = "permite_reasignacion", nullable = false)
+    private Boolean permiteReasignacion = false;
+
+    /** Contador de republicaciones de confirmado por job de reconciliación. */
+    @Builder.Default
+    @Column(name = "reconfirmaciones", nullable = false)
+    private Integer reconfirmaciones = 0;
 
     // =========================================================================================
     // version: PATRÓN Optimistic Locking.

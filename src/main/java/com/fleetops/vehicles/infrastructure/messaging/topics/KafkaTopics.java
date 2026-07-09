@@ -2,7 +2,7 @@ package com.fleetops.vehicles.infrastructure.messaging.topics;
 
 public final class KafkaTopics {
 
-    private KafkaTopics(){}
+    private KafkaTopics() { }
 
     public static final String VEHICLE_REQUEST =
             "fleetops.vehiculos.solicitar";

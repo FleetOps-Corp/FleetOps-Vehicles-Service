@@ -20,7 +20,8 @@ public class VehicleReleaseConsumer {
 
     @KafkaListener(
             topics = KafkaTopics.VEHICLE_RELEASE,
-            groupId = "${spring.kafka.consumer.group-id}"
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "vehicleReleaseKafkaListenerContainerFactory"
     )
     public void receiveVehicleRelease(VehicleReleaseEvent event) {
         log.info("Solicitud de liberación recibida para asignación {} / saga {}",

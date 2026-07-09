@@ -60,4 +60,4 @@ public record HistorialEstadoResponse(
     // Nota: Corregí el nombre del campo a 'descripcionTipo' para mayor claridad.
     String descriptionTipo   // Ej: "Transporte de carga pesada nacional"
 
-) {}
+) { }

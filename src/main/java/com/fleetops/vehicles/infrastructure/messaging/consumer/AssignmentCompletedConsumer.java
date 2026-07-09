@@ -10,6 +10,9 @@ import com.fleetops.vehicles.services.application.SagaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Contrato A+: {@code completada} es ACK de Asignaciones, no dispara confirmación de reserva.
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -23,15 +26,9 @@ public class AssignmentCompletedConsumer {
         containerFactory = "assignmentCompletedKafkaListenerContainerFactory"
     )
     public void receive(AssignmentCompletedEvent event) {
+        log.info("ACK: asignación {} completada en Asignaciones (saga {}).",
+                event.getIdAsignacion(), event.getIdSaga());
 
-        log.info(
-            "Asignación {} completada. Confirmando reserva.",
-            event.getIdAsignacion()
-        );
-
-        sagaService.confirmarReservaPorAsignacion(
-                event.getIdAsignacion());
-
+        sagaService.registrarAckAsignacion(event.getIdAsignacion());
     }
-
 }

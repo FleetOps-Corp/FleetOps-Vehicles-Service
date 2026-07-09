@@ -1,14 +1,11 @@
 package com.fleetops.vehicles.infrastructure.messaging.consumer;
 
-import com.fleetops.vehicles.dto.response.VehicleAssignmentResult;
-import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleConfirmedEvent;
+import com.fleetops.vehicles.infrastructure.messaging.VehicleAssignmentCoordinator;
 import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleFailedEvent;
 import com.fleetops.vehicles.infrastructure.messaging.dto.VehicleRequestEvent;
 import com.fleetops.vehicles.infrastructure.messaging.producer.VehicleEventProducer;
-import com.fleetops.vehicles.services.application.SagaService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -16,14 +13,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDate;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class VehicleRequestConsumerTest {
 
-    @Mock private SagaService sagaService;
+    @Mock private VehicleAssignmentCoordinator assignmentCoordinator;
     @Mock private VehicleEventProducer vehicleEventProducer;
 
     @InjectMocks private VehicleRequestConsumer consumer;
@@ -39,70 +35,21 @@ class VehicleRequestConsumerTest {
     }
 
     @Test
-    void publicaConfirmadoCuandoAsignacionExitosa() {
+    void delegaProcesamientoAlCoordinator() {
         VehicleRequestEvent event = event();
-        UUID idVehiculo = UUID.randomUUID();
-        when(sagaService.procesarSolicitudAsignacion(event)).thenReturn(
-                VehicleAssignmentResult.builder()
-                        .success(true)
-                        .idAsignacion(event.getIdAsignacion())
-                        .idVehiculo(idVehiculo)
-                        .build());
-
         consumer.receiveVehicleRequest(event);
-
-        ArgumentCaptor<VehicleConfirmedEvent> captor = ArgumentCaptor.forClass(VehicleConfirmedEvent.class);
-        verify(vehicleEventProducer).publishVehicleConfirmed(captor.capture());
-        assertEquals(event.getIdAsignacion(), captor.getValue().getIdAsignacion());
-        assertEquals(idVehiculo, captor.getValue().getIdVehiculo());
+        verify(assignmentCoordinator).procesarSolicitudConPublicacion(event);
         verify(vehicleEventProducer, never()).publishVehicleFailed(any());
     }
 
     @Test
-    void publicaFallidoCuandoNoHayVehiculos() {
+    void publicaFallidoCuandoCoordinatorLanzaExcepcion() {
         VehicleRequestEvent event = event();
-        when(sagaService.procesarSolicitudAsignacion(event)).thenReturn(
-                VehicleAssignmentResult.builder()
-                        .success(false)
-                        .idAsignacion(event.getIdAsignacion())
-                        .motivo("Sin stock")
-                        .build());
-
-        consumer.receiveVehicleRequest(event);
-
-        ArgumentCaptor<VehicleFailedEvent> captor = ArgumentCaptor.forClass(VehicleFailedEvent.class);
-        verify(vehicleEventProducer).publishVehicleFailed(captor.capture());
-        assertEquals("Sin stock", captor.getValue().getMotivo());
-        verify(vehicleEventProducer, never()).publishVehicleConfirmed(any());
-    }
-
-    @Test
-    void publicaFallidoCuandoServicioLanzaExcepcion() {
-        VehicleRequestEvent event = event();
-        when(sagaService.procesarSolicitudAsignacion(event))
+        when(assignmentCoordinator.procesarSolicitudConPublicacion(event))
                 .thenThrow(new RuntimeException("BD caída"));
 
         consumer.receiveVehicleRequest(event);
 
-        ArgumentCaptor<VehicleFailedEvent> captor = ArgumentCaptor.forClass(VehicleFailedEvent.class);
-        verify(vehicleEventProducer).publishVehicleFailed(captor.capture());
-        assertTrue(captor.getValue().getMotivo().contains("BD caída"));
-    }
-
-    @Test
-    void reintentoIdempotenteRepublicaConfirmado() {
-        VehicleRequestEvent event = event();
-        UUID idVehiculo = UUID.randomUUID();
-        when(sagaService.procesarSolicitudAsignacion(event)).thenReturn(
-                VehicleAssignmentResult.builder()
-                        .success(true)
-                        .idAsignacion(event.getIdAsignacion())
-                        .idVehiculo(idVehiculo)
-                        .idempotentReplay(true)
-                        .build());
-
-        consumer.receiveVehicleRequest(event);
-
-        verify(vehicleEventProducer).publishVehicleConfirmed(any());
+        verify(vehicleEventProducer).publishVehicleFailed(any(VehicleFailedEvent.class));
     }
 }
