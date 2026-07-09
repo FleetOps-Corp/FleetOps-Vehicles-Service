@@ -1,8 +1,11 @@
 package com.fleetops.vehicles.infrastructure.messaging.sqs.dto;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record MaintenanceEvent(
 
         UUID maintenanceId,
@@ -13,6 +16,6 @@ public record MaintenanceEvent(
 
         String status,
 
-        LocalDateTime occurredAt
+        Instant occurredAt
 
 ) {}

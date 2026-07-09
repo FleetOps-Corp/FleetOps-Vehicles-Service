@@ -7,11 +7,12 @@ Integración con **FleetOps-Maintenance-Service** según la guía SNS/SQS de la 
 ## Arquitectura
 
 ```
-Maintenance-Service  →  SNS (maintenance_topic)  →  SQS queue_vehicles  →  Vehicles-Service
+Maintenance-Service  →  SNS (maintenance_topic)  →  SQS queue_vehicles_maintenance  →  Vehicles-Service
 ```
 
 - **Fan-out:** cada microservicio consume desde su propia cola sin afectar a los demás servicios.
 - **Doble deserialización:** el `Body` de SQS contiene un sobre SNS; el evento real se encuentra en la propiedad `Message` como un JSON serializado.
+- **Tipo de evento:** no hay topics Kafka; se distingue por `event_type` en `MessageAttributes` de SNS (igual que Incidentes).
 
 ---
 
@@ -19,58 +20,82 @@ Maintenance-Service  →  SNS (maintenance_topic)  →  SQS queue_vehicles  → 
 
 | Campo | Valor |
 |-------|-------|
-| URL | `https://sqs.us-east-1.amazonaws.com/255615880629/queue_vehicles` |
-| ARN | `arn:aws:sqs:us-east-1:255615880629:queue_vehicles` |
-| Región | `us-east-1` |
-| `event_type` | `maintenance_completed` *(también se acepta `maintenanceFinished` por compatibilidad)* |
+| URL | `https://sqs.us-east-2.amazonaws.com/088538334491/queue_vehicles_maintenance` |
+| Región | `us-east-2` (configurable vía `AWS_REGION`) |
+| `event_type` creación | `maintenance_created` |
+| `event_type` finalización | `maintenance_completed` *(también `maintenanceFinished` por compatibilidad)* |
 
 ---
 
 ## Configuración (`application.properties`)
 
 ```properties
-fleetops.sqs.enabled=${SQS_ENABLED:false}
+fleetops.sqs.enabled=${SQS_ENABLED:true}
 fleetops.sqs.maintenance.queue-url=${MAINTENANCE_SQS_QUEUE_URL}
+fleetops.sqs.maintenance.event-type-created=maintenance_created
 fleetops.sqs.maintenance.event-type=maintenance_completed
+fleetops.sqs.maintenance.legacy-event-type-completed=maintenanceFinished
 
-spring.cloud.aws.region.static=us-east-1
+spring.cloud.aws.region.static=${AWS_REGION:us-east-1}
 ```
 
-En **local** dejar `SQS_ENABLED=false` (no requiere credenciales AWS).
+En **local** dejar `SQS_ENABLED=false` si no hay credenciales AWS.
 
 En **AWS/EC2** activar con IAM Role o credenciales IAM y `SQS_ENABLED=true`.
 
 ---
 
-## Payload del evento (`maintenance_completed`)
+## Payload del evento (`MaintenanceEvent`)
+
+Formato acordado con Mantenimiento (camelCase):
+
+### Creación (`maintenance_created`)
+
+```json
+{
+  "maintenanceId": "9f26d4de-d43b-4d9e-a8d8-cba72b9d96d1",
+  "vehicleId": "bc5d79f4-0ef7-43dd-9038-6382d51d58e0",
+  "maintenanceType": "CORRECTIVE",
+  "status": "CREATED",
+  "occurredAt": "2026-07-08T10:30:00Z"
+}
+```
+
+### Finalización (`maintenance_completed`)
+
+```json
+{
+  "maintenanceId": "9f26d4de-d43b-4d9e-a8d8-cba72b9d96d1",
+  "vehicleId": "bc5d79f4-0ef7-43dd-9038-6382d51d58e0",
+  "maintenanceType": "CORRECTIVE",
+  "status": "COMPLETED",
+  "occurredAt": "2026-07-08T12:45:00Z"
+}
+```
 
 | Campo | Tipo | Notas |
 |-------|------|-------|
-| `maintenance_id` | UUID | Idempotencia (`historial.id_correlacion`) |
-| `vehicle_id` | string | **Placa** del vehículo |
-| `maintenance_type` | string | Informativo |
-| `description` | string | Observaciones del mantenimiento |
-| `completion_date` | ISO-8601 | Fecha de finalización |
-| `eventType` | string | `maintenance_completed` o `maintenanceFinished` |
-
-También se aceptan los nombres definidos por el productor siempre que sean compatibles con el parser (`MaintenanceSnsMessageParser`).
+| `maintenanceId` | UUID | Correlación; idempotencia en historial |
+| `vehicleId` | UUID | ID del vehículo en Vehículos |
+| `maintenanceType` | string | Informativo (ej. `CORRECTIVE`) |
+| `status` | string | `CREATED` o `COMPLETED` (fallback si falta `event_type` SNS) |
+| `occurredAt` | ISO-8601 UTC | Acepta sufijo `Z` |
 
 ---
 
 ## Comportamiento en Vehículos
 
-| Evento | Acción |
-|---------|--------|
-| `maintenance_completed` | Cambia el estado operativo del vehículo a **DISPONIBLE** |
-| `maintenanceFinished` | Mismo comportamiento (compatibilidad temporal) |
-| Sin placa o datos inválidos | Log warn; mensaje descartado |
+| `event_type` SNS | `status` (fallback) | Acción |
+|------------------|---------------------|--------|
+| `maintenance_created` | `CREATED` | Vehículo → **EN_MANTENIMIENTO** |
+| `maintenance_completed` | `COMPLETED` | Vehículo → **DISPONIBLE** |
+| `maintenanceFinished` | — | Igual que `maintenance_completed` (legacy) |
 
-- **No crea ni modifica mantenimientos.**
-- **No cancela ni modifica reservas.**
-- El único cambio realizado es el **estado operativo** del vehículo.
-
-- **Idempotencia:** si `maintenance_id` ya fue procesado previamente (por `id_correlacion`), el mensaje se ignora.
+- **No crea ni modifica registros de mantenimiento** en Vehículos.
+- **No cancela ni modifica reservas.** La liberación del calendario es vía Kafka `fleetops.vehiculos.liberar`.
+- **Idempotencia:** `maintenanceId:CREATED` y `maintenanceId:COMPLETED` en `historial.id_correlacion`.
 - **Origen auditoría:** `MANTENIMIENTO-SQS`.
+- **Cambio de estado:** `VehicleService.changeOperationalStateOnly` (historial incluido).
 - **Errores de formato:** mensaje descartado (sin reintentos infinitos para JSON inválido).
 
 ---
@@ -79,30 +104,23 @@ También se aceptan los nombres definidos por el productor siempre que sean comp
 
 | Clase | Rol |
 |-------|-----|
-| `MaintenanceCompletedSqsListener` | `@SqsListener` sobre `queue_vehicles` |
-| `MaintenanceSnsMessageParser` | Desempaqueta el sobre SNS y convierte el mensaje al evento de mantenimiento |
-| `MaintenanceIntegrationService` | Ejecuta la lógica de negocio y cambia el estado del vehículo a **DISPONIBLE** |
+| `MaintenanceSqsListener` | `@SqsListener` sobre la cola de mantenimiento |
+| `MaintenanceSnsMessageParser` | Desempaqueta el sobre SNS |
+| `MaintenanceIntegrationService` | Reglas de negocio + cambio de estado operativo |
 
 ---
 
 ## Prueba end-to-end
 
-1. Coordinar con Mantenimiento el envío de un evento de finalización.
-2. Verificar en AWS Console → SQS → `queue_vehicles` que el mensaje llegue a la cola.
-3. Revisar los logs de `vehicles-service`.
-4. Confirmar un mensaje similar a:
+1. Mantenimiento publica creación con `event_type=maintenance_created`.
+2. Verificar vehículo en `EN_MANTENIMIENTO`:
 
 ```
-Mantenimiento aplicado: placa ABC123 → DISPONIBLE
+GET /vehiculos/{id}
 ```
 
-5. Consultar:
-
-```
-GET /vehiculos/placa/{placa}
-```
-
-o el historial del vehículo para verificar el cambio de estado.
+3. Mantenimiento publica finalización con `event_type=maintenance_completed`.
+4. Verificar vehículo en `DISPONIBLE` y entrada en historial con origen `MANTENIMIENTO-SQS`.
 
 ---
 
@@ -110,25 +128,14 @@ o el historial del vehículo para verificar el cambio de estado.
 
 | Canal | Responsabilidad en Vehículos |
 |-------|------------------------------|
-| **SQS (Mantenimiento)** | Cambiar el estado operativo del vehículo a **DISPONIBLE** cuando finaliza un mantenimiento |
-| **SQS (Incidentes)** | Cambiar el estado operativo a **EN_MANTENIMIENTO** o **FUERA_DE_SERVICIO** según la gravedad |
-| **Kafka `liberar` (Asignaciones)** | Liberación y compensación de reservas |
-| **Kafka saga** (`solicitar`, `confirmado`, `completada`) | Orquestación de asignaciones de vehículos |
+| **SQS creación** | `EN_MANTENIMIENTO` |
+| **SQS finalización** | `DISPONIBLE` |
+| **SQS (Incidentes)** | `EN_MANTENIMIENTO` o `FUERA_DE_SERVICIO` según gravedad |
+| **Kafka `liberar` (Asignaciones)** | Compensar/liberar reservas en calendario |
 
-Cuando un mantenimiento finaliza, el flujo esperado es:
+Flujo esperado cuando un vehículo entra y sale de taller:
 
 ```
-Maintenance-Service
-        │
-        ▼
-      SNS
-        │
-        ▼
- queue_vehicles (SQS)
-        │
-        ▼
-Vehicles-Service
-        │
-        ▼
-Vehículo → DISPONIBLE
+Maintenance (CREATED)  → SQS → Vehículo EN_MANTENIMIENTO
+Maintenance (COMPLETED) → SQS → Vehículo DISPONIBLE
 ```

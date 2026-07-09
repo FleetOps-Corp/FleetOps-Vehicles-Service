@@ -81,6 +81,31 @@ services:
       - fleetops-network
 
   # ---------------------------------------------------------------------------
+  # LocalStack — SNS/SQS local para Incidentes y Mantenimiento
+  # Ver docs/localstack-sqs.md y scripts/localstack/
+  # ---------------------------------------------------------------------------
+  localstack:
+    image: localstack/localstack:3
+    container_name: fleetops-localstack
+    restart: unless-stopped
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sqs,sns
+      AWS_DEFAULT_REGION: us-east-1
+      DEBUG: "0"
+    volumes:
+      - ./localstack/init:/etc/localstack/init
+    networks:
+      - fleetops-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
   # vehicles-service - Microservicio Spring Boot (construido desde el Dockerfile)
   # ---------------------------------------------------------------------------
   vehicles-service:
@@ -97,6 +122,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+      localstack:
+        condition: service_healthy
     environment:
       # Puerto interno del contenedor (siempre 8081). API_HOST_PORT expone otro puerto en el host.
       SERVER_PORT: "8081"
@@ -111,6 +138,13 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
       SHOW_SQL: ${SHOW_SQL}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      SQS_ENABLED: ${SQS_ENABLED:-true}
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      SQS_VEHICLES_QUEUE_URL: ${SQS_VEHICLES_QUEUE_URL:-http://localstack:4566/000000000000/queue_vehicles}
+      MAINTENANCE_SQS_QUEUE_URL: ${MAINTENANCE_SQS_QUEUE_URL:-http://localstack:4566/000000000000/queue_vehicles_maintenance}
       JAVA_OPTS: ${JAVA_OPTS:-}
     ports:
       - "${API_HOST_PORT:-8081}:8081"
