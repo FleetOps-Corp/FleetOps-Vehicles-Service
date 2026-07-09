@@ -370,15 +370,21 @@ public ResponseEntity<?> createVehiculo(@Valid @RequestBody CreateVehiculoReques
 
 ---
 
-## Integración SQS (Incidentes)
+## Integración SQS (Incidentes y Mantenimiento)
 
-Contrato completo: [docs/contrato-sqs-incidentes.md](docs/contrato-sqs-incidentes.md)
+| Contrato | Documento |
+|----------|-----------|
+| Incidentes | [docs/contrato-sqs-incidentes.md](docs/contrato-sqs-incidentes.md) |
+| Mantenimiento | [docs/contrato-sqs-manteneance.md](docs/contrato-sqs-manteneance.md) |
+| **Pruebas locales (LocalStack)** | [docs/localstack-sqs.md](docs/localstack-sqs.md) |
 
 | Cola | Rol de Vehículos |
 |------|------------------|
-| `queue_vehicles` | **Consume** — incidentes mecánicos vía SNS fan-out |
+| `queue_vehicles` | **Consume** — incidentes vía SNS fan-out |
+| `queue_vehicles_maintenance` | **Consume** — creación/fin de mantenimiento |
 
-Activar en AWS con `SQS_ENABLED=true` y IAM Role con permisos sobre `arn:aws:sqs:us-east-1:255615880629:queue_vehicles`. En local queda deshabilitado por defecto.
+**Local:** `docker compose up` incluye LocalStack (`:4566`) + scripts en `scripts/localstack/`.  
+**AWS:** `SQS_ENABLED=true` + IAM Role sobre las colas reales.
 
 ---
 
