@@ -94,9 +94,13 @@ public class KafkaConfig {
 
     @Bean
     ConsumerFactory<String, VehicleRequestEvent> vehicleRequestConsumerFactory() {
+
         JsonDeserializer<VehicleRequestEvent> deserializer =
                 new JsonDeserializer<>(VehicleRequestEvent.class);
+
+        deserializer.ignoreTypeHeaders();
         deserializer.addTrustedPackages("com.fleetops.vehicles.infrastructure.messaging.dto");
+
         return new DefaultKafkaConsumerFactory<>(
                 consumerProps(), new StringDeserializer(), deserializer);
     }
@@ -114,7 +118,10 @@ public class KafkaConfig {
     ConsumerFactory<String, AssignmentCompletedEvent> assignmentCompletedConsumerFactory() {
         JsonDeserializer<AssignmentCompletedEvent> deserializer =
                 new JsonDeserializer<>(AssignmentCompletedEvent.class);
+        
+        deserializer.ignoreTypeHeaders();
         deserializer.addTrustedPackages("com.fleetops.vehicles.infrastructure.messaging.dto");
+
         return new DefaultKafkaConsumerFactory<>(
                 consumerProps(), new StringDeserializer(), deserializer);
     }
@@ -132,6 +139,8 @@ public class KafkaConfig {
     ConsumerFactory<String, VehicleReleaseEvent> vehicleReleaseConsumerFactory() {
         JsonDeserializer<VehicleReleaseEvent> deserializer =
                 new JsonDeserializer<>(VehicleReleaseEvent.class);
+
+        deserializer.ignoreTypeHeaders();
         deserializer.addTrustedPackages("com.fleetops.vehicles.infrastructure.messaging.dto");
         return new DefaultKafkaConsumerFactory<>(
                 consumerProps(), new StringDeserializer(), deserializer);
