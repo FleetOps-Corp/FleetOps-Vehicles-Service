@@ -36,12 +36,15 @@ public class MaintenanceCompletedSqsListener {
             return;
         }
 
-        if (parsed.eventType() != null &&
-                !properties.getEventType().equalsIgnoreCase(parsed.eventType())) {
+        String eventType = parsed.eventType();
+
+        if (eventType != null
+                && !properties.getEventType().equalsIgnoreCase(eventType)
+                && !"maintenanceFinished".equalsIgnoreCase(eventType)) {
 
             log.info(
-                    "Evento ignorado {} (esperado {})",
-                    parsed.eventType(),
+                    "Evento ignorado {} (esperado {} o maintenanceFinished)",
+                    eventType,
                     properties.getEventType());
 
             return;
