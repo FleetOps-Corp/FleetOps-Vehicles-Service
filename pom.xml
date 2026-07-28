@@ -28,7 +28,7 @@
         <jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
         <maven-checkstyle-plugin.version>3.5.0</maven-checkstyle-plugin.version>
         <checkstyle.version>13.7.0</checkstyle.version>
-        <spring-cloud-aws.version>4.0.2</spring-cloud-aws.version>
+        <spring-cloud-aws.version>4.1.0</spring-cloud-aws.version>
         <!-- Ruta del reporte XML de JaCoCo: mismo path que luego usara SonarCloud -->
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
 
